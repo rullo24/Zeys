@@ -9,5 +9,11 @@ pub fn main() !void {
 
     _ = alloc;
 
-    _ = zeys.getCurrKeyState(zeys.getVirtKeyConvU8(zeys.VK_ENUM.VK_A));
+    while (true) {
+        if (zeys.isPressed(zeys.VK_ENUM.VK_A)) {
+            _ = zeys.pressKeyDown(zeys.VK_ENUM.VK_Z);
+            std.debug.print("pressed\n", .{});
+            _ = zeys.releaseKey(zeys.VK_ENUM.VK_Z);
+        }
+    }
 }

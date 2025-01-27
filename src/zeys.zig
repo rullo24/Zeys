@@ -1,17 +1,120 @@
+// std Zig imports
 const std = @import("std");
+const windows = std.os.windows;
 
-// importing win32 API funcs
-extern "user32" fn GetAsyncKeyState(vKey: i32) i16;
-
-// comptime calcs
-const t_cshortsize = switch (@sizeOf(c_short)) {
-    2 => u16,
-    4 => u32,
-    else => unreachable,
+// importing win32 API functionality
+const MOUSEINPUT = extern struct {
+    dx: windows.LONG = 0x0,
+    dy: windows.LONG = 0x0,
+    mouseData: windows.DWORD = 0x0,
+    dwFlags: windows.DWORD = 0x0,
+    time: windows.DWORD = 0x0,
+    dwExtraInfo: windows.ULONG_PTR = 0x0,
 };
 
-// VK enum
-pub const VK_ENUM = enum(u8) {
+const KEYBDINPUT = extern struct {
+    wVk: windows.WORD = 0x0,
+    wScan: windows.WORD = 0x0,
+    dwFlags: windows.DWORD = 0x0,
+    time: windows.DWORD = 0x0,
+    dwExtraInfo: windows.ULONG_PTR = 0x0,
+};
+
+const HARDWAREINPUT = extern struct {
+    uMsg: windows.DWORD = 0x0,
+    wParamL: windows.WORD = 0x0,
+    wParamH: windows.WORD = 0x0,
+};
+
+const DUMMYUNIONNAME = extern union {
+    mi: MOUSEINPUT, // .init zeros the struct
+    ki: KEYBDINPUT, // .init zeros the struct
+    hi: HARDWAREINPUT, // .init zeros the struct
+};
+const INPUT = extern struct {
+    input_type: windows.DWORD = 0x0,
+    DUMMYUNIONNAME: DUMMYUNIONNAME,
+};
+
+const KEYEVENTF_EXTENDEDKEY = 0x0001; // for including non-alphanumeric keys
+const KEYEVENTF_KEYUP = 0x0002; // for releasing a key
+const INPUT_KEYBOARD = 0x01; // setting input send from keyboard
+extern "user32" fn GetAsyncKeyState(vKey: i32) i16;
+extern "user32" fn BlockInput(block_flag: bool) bool;
+extern "user32" fn keybd_event(bVk: u8, bScan: u8, dwFlags: windows.DWORD, dwExtraInfo: windows.ULONG_PTR) void;
+extern "user32" fn SendInput(cInputs: c_uint, pInputs: INPUT, cbSize: c_int) c_uint;
+
+// === PUBLIC FUNCTIONS ===
+
+// checking if a key is currently activated
+pub fn isPressed(virt_key: VK_ENUM) bool {
+    return ((getCurrKeyState(virt_key) & 0x8000) != 0); // key pressed (down)
+}
+
+// checking if a toggle key is currently active
+pub fn isToggled(virt_key: VK_ENUM) !bool {
+    // checking if key can be toggled --> return error otherwise
+    const toggle_key_avail: bool = switch(virt_key) {
+        VK_ENUM.VK_CAPITAL, VK_ENUM.VK_NUMLOCK, VK_ENUM.VK_SCROLL => true,
+        else => false,
+    };
+    if (toggle_key_avail != true) return error.InvalidToggleKeyParse; // returning error to avoid confusion
+
+    return ((getCurrKeyState(virt_key) & 0x0001) != 0); // key toggled (i.e Caps Lock is ON)
+}
+
+// pressing key but not letting go (requires a releaseKey() call to deactivate) 
+pub fn pressKeyDown(virt_key: VK_ENUM) c_uint {
+    const kb_vk: u8 = @intFromEnum(virt_key);
+    const press_input: INPUT = .{ .input_type = INPUT_KEYBOARD, 
+                                .DUMMYUNIONNAME = .{ .ki = .{ 
+                                    .wVk = kb_vk, 
+                                    .dwFlags = KEYEVENTF_EXTENDEDKEY 
+                                }}};
+
+    const input_send_res: c_uint = SendInput(@sizeOf(INPUT), press_input, @sizeOf(INPUT));
+    return input_send_res;
+}
+
+// releasing key after press is triggered
+pub fn releaseKey(virt_key: VK_ENUM) c_uint {
+    const kb_vk: u8 = @intFromEnum(virt_key);
+    const press_input: INPUT = .{ .input_type = INPUT_KEYBOARD, 
+                                .DUMMYUNIONNAME = .{ .ki = .{ 
+                                    .wVk = kb_vk, 
+                                    .dwFlags = (KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
+                                }}};
+
+    const input_send_res: c_uint = SendInput(1, press_input, @sizeOf(INPUT));
+    return input_send_res;
+}
+
+// blocking all user input (system-wide) --> mouse and keyboard (used for CRITICAL functions)
+pub fn blockAllInput() void {
+    BlockInput(true);
+}
+
+// unblocking all user input (system-wide) --> mouse and keyboard (used for CRITICAL functions)
+pub fn unblockAllInput() void {
+    BlockInput(false);
+}
+
+// === PRIVATE FUNCTIONS ===
+
+fn getCurrKeyState(virt_key: VK_ENUM) i32 {
+    const virt_key_u8: u8 = @intFromEnum(virt_key); // converting enum val so that it is usable
+    const virt_key_int: c_int = virt_key_u8; // converting to c_int for ABI compatibility
+
+    // getting the state of a Windows key
+    const key_state_short: c_short = GetAsyncKeyState(virt_key_int);
+    const key_state_i32: i32 = key_state_short; // converting back to Zig ABI (unsure if this is required)
+
+    return key_state_i32;
+}
+
+// === PUBLIC ENUMS ===
+
+pub const VK_ENUM = enum(u8) { // enum for holding all of the Windows virtual keys --> associates key presses to a value
     VK_LBUTTON = 0x01,
     VK_RBUTTON = 0x02,
     VK_CANCEL = 0x03,
@@ -187,15 +290,3 @@ pub const VK_ENUM = enum(u8) {
     VK_PA1 = 0xFD,
     VK_OEM_CLEAR = 0xFE,
 };
-
-pub fn getVirtKeyConvU8(virt_key: VK_ENUM) u8 {
-    return @intFromEnum(virt_key);
-}
-
-pub fn getCurrKeyState(virt_key: u8) i32 {
-    const key_state: i16 = GetAsyncKeyState(virt_key);
-    // const key_state: t_cshortsize = win32.getAsyncKeyState(virt_key);
-    std.debug.print("{any}\n", .{key_state});
-
-    return 32;
-}

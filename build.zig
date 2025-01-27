@@ -12,7 +12,8 @@ pub fn build(b: *std.Build) void {
     });
 
     b.reference_trace = 10;
-    lib.linkSystemLibrary("user32");
+    lib.linkSystemLibrary("user32"); // building Windows lib
+
     b.installArtifact(lib);
 }   
 
