@@ -17,30 +17,13 @@ pub fn build(b: *std.Build) !void {
     });
 
     // creating an executable for each example
-    const cwd = std.fs.cwd();
-    var cwd_realpath = try cwd.realpathAlloc(alloc, ".");
-    defer alloc.free(cwd_realpath);
-    
-    std.debug.print("{s}\n", .{cwd_realpath});
-    
-    var strcmp_res: bool = false;
-    while (strcmp_res != true) {
-        const new_dir: ?[]const u8 = std.fs.path.dirname(cwd_realpath);
-        if (new_dir) |dirname| {
-            std.mem.copyForwards(u8, cwd_realpath, dirname);
-        }
-        std.debug.print("{s}\n", .{cwd_realpath});
+    const example_dir_build_root: std.Build.Cache.Directory = b.build_root; // collects loc of build.zig
+    const example_dir_path: []const u8 = example_dir_build_root.path orelse return error.build_root_null; // getting the handle for the dir
+    const example_src_paths: [2][]const u8 = .{ example_dir_path, "src" }; 
+    const example_src_dir_path: []const u8 = try std.fs.path.join(alloc, &example_src_paths);
+    defer alloc.free(example_src_dir_path); // free on build finish
 
-        if (std.mem.eql(u8, cwd_realpath, "") == true) { // error catching
-            std.debug.print("ERROR: Failed to build in cwd\n", .{});
-            return;
-        }
-        strcmp_res = std.mem.eql(u8, std.fs.path.basename(cwd_realpath), "example");
-    }
-
-    std.debug.print("{s}\n", .{cwd_realpath});
-    
-    var example_dir = try cwd.openDir("./src", .{.iterate = true}); // opening Dir object
+    var example_dir = try std.fs.openDirAbsolute(example_src_dir_path, .{ .iterate = true }); // opening a directory obj
     defer example_dir.close(); // close file on build function end
 
     // creating a directory walker
@@ -50,7 +33,6 @@ pub fn build(b: *std.Build) !void {
     // iterate over each file
     while (try example_dir_walker.next()) |example_file| { 
         if (example_file.kind == .file) { // checking that the current file is a regular file
-            std.debug.print("{s} | {s}\n", .{example_file.basename, example_file.path});
 
             // creating zig strings from NULL terminated ones
             const basename: []const u8 = example_file.basename;
