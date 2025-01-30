@@ -3,19 +3,24 @@ const std = @import("std");
 const c = std.c;
 const windows = std.os.windows;
 
+
 // Windows API functionality
 const KEYEVENTF_EXTENDEDKEY = 0x0001; // for including non-alphanumeric keys
 const KEYEVENTF_KEYUP = 0x0002; // for releasing a key
 const INPUT_KEYBOARD = 0x01; // setting input send from keyboard
+const WM_KEYUP = 0x0101; // used for releasing key messages
+const WM_KEYDOWN = 0x0100; // used for pressing key messages
 extern "user32" fn GetAsyncKeyState(vKey: c_int) c_short;
 extern "user32" fn BlockInput(block_flag: bool) bool;
-extern "user32" fn keybd_event(bVk: u8, bScan: u8, dwFlags: windows.DWORD, dwExtraInfo: windows.ULONG_PTR) void;
-extern "user32" fn GetFocus() windows.HWND;
 extern "user32" fn GetForegroundWindow() windows.HWND;
 extern "user32" fn VkKeyScanA(ch: u8) c_short;
-extern "user32" fn SendInput(cInputs: c_uint, pInputs: [*]const INPUT, cbSize: c_int) c_uint;
+extern "user32" fn SendInput(cInputs: c_uint, pInputs: *const INPUT, cbSize: c_int) c_uint;
+extern "user32" fn SendMessage(hWnd: windows.HWND, Msg: c_uint, wParam: windows.WPARAM, lParam: windows.LPARAM) windows.LRESULT;
+extern "user32" fn GetKeyboardLayoutName(pwszKLID: windows.LPSTR) bool;
+
 
 // === extern struct definitions ===
+
 
 const MOUSEINPUT = extern struct {
     dx: windows.LONG = 0x0,
@@ -50,18 +55,27 @@ const INPUT = extern struct {
     DUMMYUNIONNAME: DUMMYUNIONNAME,
 };
 
+
 // === PUBLIC FUNCTIONS ===
 
+
+// simulates a while (true) {} without high CPU usage 
+pub fn zeysInfWait() void {
+    while (true) {
+        std.time.sleep(10e6);
+    }
+}
+
 // checking if a key is currently activated
-pub fn isPressed(virt_key: VK_ENUM) bool {
+pub fn isPressed(virt_key: VK) bool {
     return ((_getCurrKeyState(virt_key) & 0x8000) != 0); // key pressed (down)
 }
 
 // checking if a toggle key is currently active
-pub fn isToggled(virt_key: VK_ENUM) !bool {
+pub fn isToggled(virt_key: VK) !bool {
     // checking if key can be toggled --> return error otherwise
     const toggle_key_avail: bool = switch(virt_key) {
-        VK_ENUM.VK_CAPITAL, VK_ENUM.VK_NUMLOCK, VK_ENUM.VK_SCROLL => true,
+        VK.VK_CAPITAL, VK.VK_NUMLOCK, VK.VK_SCROLL => true,
         else => false,
     };
     if (toggle_key_avail != true) return error.InvalidToggleKeyParse; // returning error to avoid confusion
@@ -69,10 +83,62 @@ pub fn isToggled(virt_key: VK_ENUM) !bool {
     return ((_getCurrKeyState(virt_key) & 0x0001) != 0); // key toggled (i.e Caps Lock is ON)
 }
 
-// pressing a key for a short time (simulating a user press)
-pub fn pressKey(virt_key: VK_ENUM) !void {
+
+
+
+
+
+
+TODO
+
+// returns the current keyboard's locale identifier
+pub fn getKeyboardLocaleIdentifier() ![*:0]u8 {
+    const null_term_buf: [10:0]u8 = undefined;
+    const lpstr_buf: windows.LPSTR = null_term_buf[0];
+    const res_keyboard_id_grab: bool = GetKeyboardLayoutName(lpstr_buf);
+    if (res_keyboard_id_grab != true) {
+        return error.cannot_capture_global_keyboard;
+    }
+    return lpstr_buf;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// checks if a key is a modifier key
+pub fn keyIsModifier(virt_key: VK) bool {
+    const modifier_res: bool = switch (virt_key) {
+        VK.VK_LCONTROL, VK.VK_LSHIFT, VK.VK_LWIN, VK.VK_LMENU,
+        VK.VK_RCONTROL, VK.VK_RSHIFT, VK.VK_RWIN, VK.VK_RMENU, 
+        VK.VK_CONTROL, VK.VK_SHIFT, VK.VK_MENU, => true,
+        else => false,
+    };
+    return modifier_res;
+}
+
+// simulates a person pressing a key 1x times
+pub fn pressAndReleaseKey(virt_key: VK) !void {
     const virt_key_u8: u8 = try _getU8VkFromEnum(virt_key);
-    try _pressKeyU8(virt_key_u8);
+    try _pressAndReleaseKeyU8(virt_key_u8);
 }
 
 // pressing the keys associated w/ bytes (can print random bytes to screen) --> fast but does not check
@@ -89,7 +155,7 @@ pub fn pressKeyString(str: []const u8) !void {
     for (str) |char| {
         const vk_from_char: c_short = _getVkFromChar(char); // converting character to virtual key (no need for size check before typecast as this has been done above)
         const vk_u8: u8 = @intCast(vk_from_char & 0xFF);
-        try _pressKeyU8(vk_u8); // pressing the current chars key
+        try _pressAndReleaseKeyU8(vk_u8); // pressing the current chars key
     }
 }
 
@@ -105,29 +171,24 @@ pub fn pressKeyStringAsciiSafe(str: []const u8) !void {
 }
 
 // blocking all user input (system-wide) --> mouse and keyboard (used for CRITICAL functions)
-pub fn blockAllInput() void {
+pub fn blockAllUserInput() void {
     BlockInput(true);
 }
 
 // unblocking all user input (system-wide) --> mouse and keyboard (used for CRITICAL functions)
-pub fn unblockAllInput() void {
+pub fn unblockAllUserInput() void {
     BlockInput(false);
 }
 
+
 // === PRIVATE FUNCTIONS ===
 
-// collecting the u8 from the specified VK_ENUM value
-fn _getU8VkFromEnum(virt_key_enum: VK_ENUM) !u8 {
+
+// collecting the u8 from the specified VK value
+fn _getU8VkFromEnum(virt_key_enum: VK) !u8 {
     const virt_key_c_short: c_short = @intFromEnum(virt_key_enum); // typecast to allow easy parsing of VK
     if (virt_key_c_short > 0xff) return error.virt_key_larger_than_u8;
     return @intCast(virt_key_c_short); // converts to u8 on return
-}
-
-// pressing a key for a short time (simulating a user press)
-fn _pressKeyU8(virt_key_u8: u8) !void {
-    try _pressKeyDown(virt_key_u8); // pressing key down
-    std.time.sleep(std.time.ns_per_ms); // blocking for 1ms to allow time for the key press to be executed
-    try _releaseKey(virt_key_u8); // lifting key up
 }
 
 // collecting the virtual key from a char (ASCII)
@@ -135,69 +196,24 @@ fn _getVkFromChar(ex_char: u8) c_short {
     return VkKeyScanA(ex_char);
 }
 
-// pressing key but not letting go (requires a releaseKey() call to deactivate) 
-fn _pressKeyDown(virt_key_u8: u8) !void {
-    const input_keys: [1]INPUT = .{
-        INPUT{
-            .input_type = INPUT_KEYBOARD,
-            .DUMMYUNIONNAME = .{ .ki = KEYBDINPUT {
-                .wVk = virt_key_u8,
-                .wScan = 0x0,
-                .dwFlags = KEYEVENTF_EXTENDEDKEY | 0x0,
-                .time = 0x0,
-                .dwExtraInfo = 0x0,
-            }}
-        }
-    };
-    const p_input_keys: [*]const INPUT = &input_keys[0]; // creating ptr to first value in array
-       
+// press and release key U8
+fn _pressAndReleaseKeyU8(virt_key_u8: u8) !void {
+    // generating the INPUT signals (structs) for the SendInput win32 func call
+    const key_down_input: INPUT = _pressKeyDownOnlyU8(virt_key_u8);
+    const key_up_input: INPUT = _releaseKeyUpOnlyU8(virt_key_u8);
+    const input_keys: [2]INPUT = .{ key_down_input, key_up_input };
+    const p_input_keys: *const INPUT = &input_keys[0]; // creating ptr to first value in array
+
     // checking success of sending input --> 1 == error occurred
-    if (SendInput(1, p_input_keys, @sizeOf(INPUT))) {
+    const res_send_input: c_uint = SendInput(2, p_input_keys, @sizeOf(INPUT));
+    if (res_send_input == 0) {
         return error.failed_to_send_press_key_down_input;
     }
-}
-
-fn _old_pressKeyDown(virt_key_u8: u8) !void {
-    // press key event
-    keybd_event(virt_key_u8,
-                0x0,
-                (KEYEVENTF_EXTENDEDKEY | 0x0), 
-                0x0);
-}
-
-// releasing key after press is triggered
-fn _releaseKey(virt_key_u8: u8) !void {
-    const virt_key: c_short = _getVkFromChar(virt_key_u8);
-    const input_keys: [1]INPUT = .{
-        INPUT{
-            .input_type = INPUT_KEYBOARD,
-            .DUMMYUNIONNAME = .{ .ki = KEYBDINPUT {
-                .wVk = virt_key,
-                .wScan = 0x0,
-                .dwFlags = KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP,
-                .time = 0x0,
-                .dwExtraInfo = 0x0,
-            }}
-        }
-    };
-    const p_input_keys: [*]const INPUT = &input_keys[0]; // creating a ptr to the first value in the arr
-
-    // checking success of sending input --> 1 == error occurred
-    if (SendInput(1, p_input_keys, @sizeOf(INPUT))) {
-        return error.failed_to_send_press_key_up_input;
-    }
-}
-
-fn _old_releaseKey(virt_key_u8: u8) !void {
-    // release key event
-    keybd_event(virt_key_u8,
-                0x0,
-                (KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP), 
-                0x0);
+    std.time.sleep(std.time.ns_per_ms); // sleeping for an ms to avoid weird memory overwrites --> keyboard pressing wrong chars
 }
 
 // gets the state bitmap of a specified virtual key
-fn _getCurrKeyState(virt_key: VK_ENUM) i32 {
+fn _getCurrKeyState(virt_key: VK) i32 {
     const virt_key_u8: c_short = @intFromEnum(virt_key); // converting enum val so that it is usable
     const virt_key_int: c_int = virt_key_u8; // converting to c_int for ABI compatibility
 
@@ -226,9 +242,75 @@ fn _utf32IsNotAscii(pot_ascii_str: []const u32) bool {
     return false;
 }
 
+// func for returning the INPUT struct for WM_KEYDOWN
+fn _pressKeyDownOnlyU8(virt_key_u8: u8) INPUT {
+    const virt_key_u16: u16 = virt_key_u8; // packing for KEYBDINPUT
+    const key_down_input: INPUT = .{ // push key down
+        .input_type = INPUT_KEYBOARD,
+        .DUMMYUNIONNAME = .{ .ki = KEYBDINPUT {
+            .wVk = virt_key_u16,
+            .wScan = 0x0,
+            .dwFlags = 0x0 | KEYEVENTF_EXTENDEDKEY, // EXTENDEDKEY used to allow for non-basic VKs to be used
+            .time = 0x0,
+            .dwExtraInfo = 0x0,
+        }}
+    };
+    return key_down_input;
+}
+
+// func for returning the INPUT struct for WM_KEYUP 
+fn _releaseKeyUpOnlyU8(virt_key_u8: u8) INPUT {
+    const virt_key_u16: u16 = virt_key_u8; // packing for KEYBDINPUT
+    const key_up_input: INPUT = .{ // push key down
+        .input_type = INPUT_KEYBOARD,
+        .DUMMYUNIONNAME = .{ .ki = KEYBDINPUT {
+            .wVk = virt_key_u16,
+            .wScan = 0x0,
+            .dwFlags = KEYEVENTF_KEYUP | KEYEVENTF_EXTENDEDKEY, // EXTENDEDKEY used to allow for non-basic VKs to be used
+            .time = 0x0,
+            .dwExtraInfo = 0x0,
+        }}
+    };
+    return key_up_input;
+}
+
+
+
+
+
+
+
+
+TODO
+
+// func for returning []INPUT (slice) that contains all inputs that need to be performed for character to be pressed --> includes special chars i.e. '$'
+fn _charToInputSliceAlloc(alloc: std.mem.Allocator, ascii_char: u8) ![]INPUT {
+    // ensuring that the provided value can be typed
+    if (std.ascii.isPrint(ascii_char) != true) {
+        return error.non_printable_char_parse;
+    }
+
+    var input_arr_list = std.ArrayList(INPUT).init(alloc); // store all INPUTs for a character (modifier + key [KEYUP + KEYDOWN])
+    defer alloc.free(input_arr_list); // not required due to .toOwnedSlice() return but have left here as good practice
+
+    // single key vs multi-key press required
+    if (std.ascii.isAlphanumeric(ascii_char)) {
+        input_arr_list.append(_pressKeyDownOnlyU8(ascii_char));
+        input_arr_list.append(_releaseKeyUpOnlyU8(ascii_char));
+    } // else if () {
+
+    // } else {
+    //     return error.unknown_printable_character;
+    // }
+
+    return input_arr_list.toOwnedSlice();
+}
+
+
 // === PUBLIC ENUMS ===
 
-pub const VK_ENUM = enum(c_short) { // enum for holding all of the Windows virtual keys --> associates key presses to a value
+
+pub const VK = enum(c_short) { // enum for holding all of the Windows virtual keys --> associates key presses to a value
     VK_LBUTTON = 0x01,
     VK_RBUTTON = 0x02,
     VK_CANCEL = 0x03,
