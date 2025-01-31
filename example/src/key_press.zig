@@ -8,9 +8,10 @@ pub fn main() !void {
     // const alloc = gpa.allocator();
     // defer _ = gpa.deinit();
 
-    std.time.sleep(std.time.ns_per_s * 2);
+    // std.time.sleep(std.time.ns_per_s * 2);
 
-    try zeys.pressKeyString("Testing101");
+    zeys.waitUntilKeyPressed(zeys.VK.VK_0);
+    std.debug.print("hey", .{});
 
     // zeys.zeysInfWait();
 

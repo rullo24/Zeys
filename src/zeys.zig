@@ -66,6 +66,14 @@ pub fn zeysInfWait() void {
     }
 }
 
+// simulates a while (true) {} without high CPU usage but passes when a certain key is pressed
+pub fn waitUntilKeyPressed(virt_key: VK) void {
+    while (isPressed(virt_key) != true) {
+        std.time.sleep(std.time.ns_per_us * 200);
+        // std.debug.print("{any}\n", .{std.time.milliTimestamp()});
+    }
+}
+
 // checking if a key is currently activated
 pub fn isPressed(virt_key: VK) bool {
     return ((_getCurrKeyState(virt_key) & 0x8000) != 0); // key pressed (down)
@@ -127,7 +135,6 @@ pub fn pressKeyString(str: []const u8) !void {
             }
             valid_input_count += 1;
         }
-
         if (valid_input_count != 2 and valid_input_count != 4) return error.Failed_To_Press_Key;
 
         // pressing each key --> 1ms between keypresses to ensure false keys are pressed

@@ -35,13 +35,12 @@ pub fn build(b: *std.Build) !void {
         if (example_file.kind == .file) { // checking that the current file is a regular file
 
             // creating zig strings from NULL terminated ones
-            const basename: []const u8 = example_file.basename;
-            const path: []const u8 = try std.fmt.allocPrint(alloc, "./src/{s}", .{example_file.path});
+            const path: []const u8 = try std.fmt.allocPrint(alloc, "./src/{s}", .{example_file.basename});
             defer alloc.free(path);
 
             // creating executables for each example
             const curr_exe = b.addExecutable(.{ 
-                .name = basename,
+                .name = std.fs.path.stem(example_file.basename),
                 .root_source_file = b.path(path),
                 .target = target,
                 .optimize = optimise,
