@@ -16,7 +16,7 @@ extern "user32" fn GetForegroundWindow() windows.HWND;
 extern "user32" fn VkKeyScanA(ch: u8) c_short;
 extern "user32" fn SendInput(cInputs: c_uint, pInputs: *const INPUT, cbSize: c_int) c_uint;
 extern "user32" fn SendMessage(hWnd: windows.HWND, Msg: c_uint, wParam: windows.WPARAM, lParam: windows.LPARAM) windows.LRESULT;
-extern "user32" fn GetKeyboardLayoutName(pwszKLID: windows.LPSTR) bool;
+extern "user32" fn GetKeyboardLayoutNameA(pwszKLID: windows.LPSTR) bool;
 
 
 // === extern struct definitions ===
@@ -83,46 +83,17 @@ pub fn isToggled(virt_key: VK) !bool {
     return ((_getCurrKeyState(virt_key) & 0x0001) != 0); // key toggled (i.e Caps Lock is ON)
 }
 
-
-
-
-
-
-
-TODO
-
 // returns the current keyboard's locale identifier
-pub fn getKeyboardLocaleIdentifier() ![*:0]u8 {
-    const null_term_buf: [10:0]u8 = undefined;
-    const lpstr_buf: windows.LPSTR = null_term_buf[0];
-    const res_keyboard_id_grab: bool = GetKeyboardLayoutName(lpstr_buf);
-    if (res_keyboard_id_grab != true) {
+pub fn getKeyboardLocaleIdAlloc(alloc: std.mem.Allocator) ![]u8 {
+    // casting the buffer to a different type
+    const buf: []u8 = try alloc.alloc(u8, 9); // creating an arr of size==10 (must be minimum size of 9 + 1 for \0)
+    const lpstr_buf_win32: windows.LPSTR = @ptrCast(buf.ptr); // .ptr used instead of &buf to ensure that a ptr to fixed arr is gotten (not ptr to slice start)
+    const res_keyboard_id_grab: bool = GetKeyboardLayoutNameA(lpstr_buf_win32); // getting the keyboard layout ID (digits)
+    if (res_keyboard_id_grab != true) { // checking that GetKeyboardLayoutNameA() was successful
         return error.cannot_capture_global_keyboard;
     }
-    return lpstr_buf;
+    return buf;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 // checks if a key is a modifier key
 pub fn keyIsModifier(virt_key: VK) bool {
@@ -143,24 +114,40 @@ pub fn pressAndReleaseKey(virt_key: VK) !void {
 
 // pressing the keys associated w/ bytes (can print random bytes to screen) --> fast but does not check
 pub fn pressKeyString(str: []const u8) !void {
-    // iterating over each byte to check string print validity
+    // iterating over each byte to keyboard print the char
     for (str) |char| {
-        // checking that the string consists only of alphanumeric chars
-        if (std.ascii.isAlphanumeric(char) != true) {
-            return error.char_is_not_alphanumeric;
+        var input_arr_size_4: [4]INPUT = undefined;
+        const curr_char_input_slice: []INPUT = try _charToInputSliceAlloc(input_arr_size_4[0..input_arr_size_4.len], char);
+    
+        // checking for the num of valid keyboard INPUTs
+        var valid_input_count: c_uint = 0;
+        for (curr_char_input_slice) |curr| { // iterating over each
+            if (_isValidKeyboardInputType(&curr) != true) {
+                break; // moving 
+            }
+            valid_input_count += 1;
         }
-    }  
 
-    // iterating over each byte to keyboard print the string
-    for (str) |char| {
-        const vk_from_char: c_short = _getVkFromChar(char); // converting character to virtual key (no need for size check before typecast as this has been done above)
-        const vk_u8: u8 = @intCast(vk_from_char & 0xFF);
-        try _pressAndReleaseKeyU8(vk_u8); // pressing the current chars key
+        if (valid_input_count != 2 and valid_input_count != 4) return error.Failed_To_Press_Key;
+
+        // pressing each key --> 1ms between keypresses to ensure false keys are pressed
+        var i: usize = 0;
+        while (valid_input_count > i) {
+            const press_key_res: c_uint = SendInput(1, &curr_char_input_slice[i], @sizeOf(INPUT)); // pressing 1x INPUT
+            if (press_key_res == 0) return error.Failed_To_Send_Press_Key; // err checking
+            std.time.sleep(std.time.ns_per_ms * 1); // waiting to avoid false keypresses
+            i += 1; // incrementing counter to move to next INPUT{}
+        }
     }
 }
 
 // pressing the keys associated w/ an ASCII string
 pub fn pressKeyStringAsciiSafe(str: []const u8) !void {
+    // checking that string is safe
+    for (str) |char| {
+        if (std.ascii.isPrint(char) != true) return error.Char_Is_Not_Printable;
+    }
+
     // checking string for non-ASCII layout
     if (_utf8IsNotAscii(str) or _utf16IsNotAscii(str) or _utf32IsNotAscii(str)) {
         return error.non_ascii_string_parse;
@@ -274,36 +261,50 @@ fn _releaseKeyUpOnlyU8(virt_key_u8: u8) INPUT {
     return key_up_input;
 }
 
-
-
-
-
-
-
-
-TODO
+// checking for valid INPUT types
+fn _isValidKeyboardInputType(p_input: *const INPUT) bool {
+    if (p_input.*.input_type != INPUT_KEYBOARD) {
+        return false;
+    }
+    return true;
+}
 
 // func for returning []INPUT (slice) that contains all inputs that need to be performed for character to be pressed --> includes special chars i.e. '$'
-fn _charToInputSliceAlloc(alloc: std.mem.Allocator, ascii_char: u8) ![]INPUT {
+fn _charToInputSliceAlloc(input_slice: []INPUT, ascii_char: u8) ![]INPUT {
+    // checking that parsed slice is large enough
+    if (input_slice.len != 4) {
+        return error.Input_Slice_Len_Not_Four;
+    }
+
     // ensuring that the provided value can be typed
     if (std.ascii.isPrint(ascii_char) != true) {
         return error.non_printable_char_parse;
     }
 
-    var input_arr_list = std.ArrayList(INPUT).init(alloc); // store all INPUTs for a character (modifier + key [KEYUP + KEYDOWN])
-    defer alloc.free(input_arr_list); // not required due to .toOwnedSlice() return but have left here as good practice
+    // creating list to append to (rather than using index notation)
+    // const input_slice: []INPUT = try alloc.alloc(INPUT, 4);
+    // errdefer alloc.free(input_slice); // free slice on error
 
-    // single key vs multi-key press required
-    if (std.ascii.isAlphanumeric(ascii_char)) {
-        input_arr_list.append(_pressKeyDownOnlyU8(ascii_char));
-        input_arr_list.append(_releaseKeyUpOnlyU8(ascii_char));
-    } // else if () {
+    // using win32 API to capture whether a modifier is required alongside VK press
+    const special_vk_c_short: c_short = _getVkFromChar(ascii_char);
+    const special_vk_high_bytes: u8 = @intCast((special_vk_c_short >> 8) & 0xff); // high-bytes denote the additional modifiers
+    const special_requires_shift_modifier: bool = ((special_vk_high_bytes & 1) > 0); // 0x01 of high-byte denotes the SHIFT modifier requires pressing
+    const special_vk_u8: u8 = @intCast(special_vk_c_short & 0xff); // removing c_short extra bytes
+    
+    // responding to if a modifier is required for the special key to be pressed i.e. shift
+    if (special_requires_shift_modifier == true) { // modifier required
+        input_slice[0] = _pressKeyDownOnlyU8(0x10); // shift key
+        input_slice[1] = _pressKeyDownOnlyU8(special_vk_u8);
+        input_slice[2] = _releaseKeyUpOnlyU8(0x10); // shift key
+        input_slice[3] = _releaseKeyUpOnlyU8(special_vk_u8);
+    } else {
+        input_slice[0] = _pressKeyDownOnlyU8(special_vk_u8);
+        input_slice[1] = _releaseKeyUpOnlyU8(special_vk_u8);
+        input_slice[2] = .{ .input_type = 0xff, .DUMMYUNIONNAME = .{ .ki = KEYBDINPUT {.wVk = 0x0, .wScan = 0x0, .dwFlags = 0x0, .time = 0x0, .dwExtraInfo = 0x0,}}};
+        input_slice[3] = .{ .input_type = 0xff, .DUMMYUNIONNAME = .{ .ki = KEYBDINPUT {.wVk = 0x0, .wScan = 0x0, .dwFlags = 0x0, .time = 0x0, .dwExtraInfo = 0x0,}}};
+    }
 
-    // } else {
-    //     return error.unknown_printable_character;
-    // }
-
-    return input_arr_list.toOwnedSlice();
+    return input_slice;
 }
 
 

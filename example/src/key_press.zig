@@ -4,12 +4,15 @@ const print = std.debug.print;
 
 // pressing a singular key --> displaying in console stdin
 pub fn main() !void {
-    // std.time.sleep(std.time.ns_per_s * 2);
-    // try zeys.pressAndReleaseKey(zeys.VK_ENUM.VK_A);
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // const alloc = gpa.allocator();
+    // defer _ = gpa.deinit();
 
-    print("{s}\n", .{ try zeys.getKeyboardLocaleIdentifier() } );
+    std.time.sleep(std.time.ns_per_s * 2);
 
-    zeys.zeysInfWait();
+    try zeys.pressKeyString("Testing101");
+
+    // zeys.zeysInfWait();
 
     return;
 }
