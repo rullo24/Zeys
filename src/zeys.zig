@@ -70,7 +70,6 @@ pub fn zeysInfWait() void {
 pub fn waitUntilKeyPressed(virt_key: VK) void {
     while (isPressed(virt_key) != true) {
         std.time.sleep(std.time.ns_per_us * 200);
-        // std.debug.print("{any}\n", .{std.time.milliTimestamp()});
     }
 }
 
@@ -206,36 +205,6 @@ fn _pressAndReleaseKeyU8(virt_key_u8: u8) !void {
     std.time.sleep(std.time.ns_per_ms); // sleeping for an ms to avoid weird memory overwrites --> keyboard pressing wrong chars
 }
 
-// gets the state bitmap of a specified virtual key
-fn _getCurrKeyState(virt_key: VK) i32 {
-    const virt_key_u8: c_short = @intFromEnum(virt_key); // converting enum val so that it is usable
-    const virt_key_int: c_int = virt_key_u8; // converting to c_int for ABI compatibility
-
-    // getting the state of a Windows key
-    const key_state_short: c_short = GetAsyncKeyState(virt_key_int);
-    const key_state_i32: i32 = key_state_short; // converting back to Zig ABI (unsure if this is required)
-
-    return key_state_i32;
-}
-
-// checking if a string (UTF-8 encoded) is not ASCII
-fn _utf8IsNotAscii(pot_ascii_str: []const u8) bool {
-    for (pot_ascii_str) |char_u8| { if (char_u8 > 0x7F) return true; } // iterate over each u8
-    return false;
-}
-
-// checking if a string (UTF-8 encoded) is not ASCII
-fn _utf16IsNotAscii(pot_ascii_str: []const u16) bool {
-    for (pot_ascii_str) |char_u16| { if (char_u16 > 0x7F) return true; } // iterate over each u8
-    return false;
-}
-
-// checking if a string (UTF-16 encoded) is not ASCII
-fn _utf32IsNotAscii(pot_ascii_str: []const u32) bool {
-    for (pot_ascii_str) |char_u32| { if (char_u32 > 0x7F) return true; } // iterate over each u8
-    return false;
-}
-
 // func for returning the INPUT struct for WM_KEYDOWN
 fn _pressKeyDownOnlyU8(virt_key_u8: u8) INPUT {
     const virt_key_u16: u16 = virt_key_u8; // packing for KEYBDINPUT
@@ -268,14 +237,6 @@ fn _releaseKeyUpOnlyU8(virt_key_u8: u8) INPUT {
     return key_up_input;
 }
 
-// checking for valid INPUT types
-fn _isValidKeyboardInputType(p_input: *const INPUT) bool {
-    if (p_input.*.input_type != INPUT_KEYBOARD) {
-        return false;
-    }
-    return true;
-}
-
 // func for returning []INPUT (slice) that contains all inputs that need to be performed for character to be pressed --> includes special chars i.e. '$'
 fn _charToInputSliceAlloc(input_slice: []INPUT, ascii_char: u8) ![]INPUT {
     // checking that parsed slice is large enough
@@ -287,10 +248,6 @@ fn _charToInputSliceAlloc(input_slice: []INPUT, ascii_char: u8) ![]INPUT {
     if (std.ascii.isPrint(ascii_char) != true) {
         return error.non_printable_char_parse;
     }
-
-    // creating list to append to (rather than using index notation)
-    // const input_slice: []INPUT = try alloc.alloc(INPUT, 4);
-    // errdefer alloc.free(input_slice); // free slice on error
 
     // using win32 API to capture whether a modifier is required alongside VK press
     const special_vk_c_short: c_short = _getVkFromChar(ascii_char);
@@ -312,6 +269,40 @@ fn _charToInputSliceAlloc(input_slice: []INPUT, ascii_char: u8) ![]INPUT {
     }
 
     return input_slice;
+}
+
+// gets the state bitmap of a specified virtual key --> used to check if key as pressed down
+fn _getCurrKeyState(virt_key: VK) c_short {
+    const virt_key_u8: c_short = @intFromEnum(virt_key); // converting enum val so that it is usable
+    const virt_key_int: c_int = virt_key_u8; // converting to c_int for ABI compatibility
+    const key_state_short: c_short = GetAsyncKeyState(virt_key_int);
+    return key_state_short;
+}
+
+// checking for valid INPUT types
+fn _isValidKeyboardInputType(p_input: *const INPUT) bool {
+    if (p_input.*.input_type != INPUT_KEYBOARD) {
+        return false;
+    }
+    return true;
+}
+
+// checking if a string (UTF-8 encoded) is not ASCII
+fn _utf8IsNotAscii(pot_ascii_str: []const u8) bool {
+    for (pot_ascii_str) |char_u8| { if (char_u8 > 0x7F) return true; } // iterate over each u8
+    return false;
+}
+
+// checking if a string (UTF-8 encoded) is not ASCII
+fn _utf16IsNotAscii(pot_ascii_str: []const u16) bool {
+    for (pot_ascii_str) |char_u16| { if (char_u16 > 0x7F) return true; } // iterate over each u8
+    return false;
+}
+
+// checking if a string (UTF-16 encoded) is not ASCII
+fn _utf32IsNotAscii(pot_ascii_str: []const u32) bool {
+    for (pot_ascii_str) |char_u32| { if (char_u32 > 0x7F) return true; } // iterate over each u8
+    return false;
 }
 
 
