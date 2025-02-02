@@ -1,15 +1,23 @@
-// std Zig imports
+// =======================
+// === STD ZIG IMPORTS ===
+
 const std = @import("std");
 const c = std.c;
 const windows = std.os.windows;
 
-// Windows API functionality
+// === STD ZIG IMPORTS ===
+// =======================
+
+// =================================
+// === WINDOWS API FUNCTIONALITY ===
+
 const KEYEVENTF_EXTENDEDKEY = 0x0001; // for including non-alphanumeric keys
 const KEYEVENTF_KEYUP = 0x0002; // for releasing a key
 const INPUT_KEYBOARD = 0x01; // setting input send from keyboard
 const WM_KEYUP = 0x0101; 
 const WM_KEYDOWN = 0x0100; 
 const WM_HOTKEY = 0x0312; 
+
 extern "user32" fn GetAsyncKeyState(vKey: c_int) c_short;
 extern "user32" fn BlockInput(block_flag: bool) windows.BOOL;
 extern "user32" fn GetForegroundWindow() windows.HWND;
@@ -18,10 +26,15 @@ extern "user32" fn SendInput(cInputs: c_uint, pInputs: *const INPUT, cbSize: c_i
 extern "user32" fn SendMessage(hWnd: windows.HWND, Msg: c_uint, wParam: windows.WPARAM, lParam: windows.LPARAM) windows.LRESULT;
 extern "user32" fn GetKeyboardLayoutNameA(pwszKLID: windows.LPSTR) windows.BOOL;
 extern "user32" fn GetMessageA(lpMsg: *MSG, hWnd: ?windows.HWND, wMsgFilterMin: windows.UINT, wMsgFilterMax: windows.UINT) windows.BOOL;
+extern "user32" fn PeekMessageA(lpMsg: *MSG, hWnd: ?windows.HWND, wMsgFilterMin: windows.UINT, wMsgFilterMax: windows.UINT, wRemoveMsg: windows.UINT) windows.BOOL;
 extern "user32" fn RegisterHotKey(hWnd: ?windows.HWND, id: c_uint, fsModifiers: windows.UINT, vk: windows.UINT) windows.BOOL;
-extern "user32" fn UnregisterHotKey(hWnd: windows.HWND, id: c_int) windows.BOOL;
+extern "user32" fn UnregisterHotKey(hWnd: ?windows.HWND, id: c_int) windows.BOOL;
 extern "user32" fn GetLastError() windows.DWORD;
 
+// === WINDOWS API FUNCTIONALITY ===
+// =================================
+
+// ==========================
 // === EXTERN STRUCT DEFS ===
 
 const MOUSEINPUT = extern struct {
@@ -68,6 +81,10 @@ const MSG = extern struct {
     lPrivate: windows.DWORD,
 };
 
+// === EXTERN STRUCT DEFS ===
+// ==========================
+
+// =========================
 // === CUSTOM STRUCTURES ===
 
 const WIN32_CALLBACK_TYPES = enum(u8) {
@@ -83,6 +100,10 @@ const Hotkey_Hook_Callback = struct { // used in Msg thread (for calling callbac
     back_type: WIN32_CALLBACK_TYPES, 
 };
 
+// === CUSTOM STRUCTURES ===
+// =========================
+
+// ===================
 // === GLOBAL VARS ===
 
 const MAX_NUM_HOTKEY_HOOK_KEYS: usize = 10;
@@ -93,26 +114,11 @@ var hotkeys_i_opt: ?usize = null;
 var hook_arr: [MAX_NUM_HOTKEY_HOOK_KEYS]Hotkey_Hook_Callback = undefined;
 var hook_i_opt: ?usize = null;
 
+// === GLOBAL VARS ===
+// ===================
+
+// ========================
 // === PUBLIC FUNCTIONS ===
-
-// init message recv thread for use w/ callback funcs (i.e. hooks and hotkeys) --> returns max num of hook keys (MAX_NUM_HOTKEY_HOOK_KEYS)
-pub fn initMsgCallback() !usize {
-    // init the ext thread --> store the Thread ID in a var to check initialisation
-    const foreground_hwnd: windows.HWND = GetForegroundWindow();
-    callback_thread = try std.Thread.spawn(.{}, _actOnKeyboardMsgs, .{ foreground_hwnd }); // does not require args as global vars as used instead
-    return MAX_NUM_HOTKEY_HOOK_KEYS;
-}
-
-// freeing all resources associated w/ the msg thread (brought about by the initMsgCallback() func call)
-pub fn deinitMsgCallback() void {
-    // stop all ext threads from running
-    run_threads_flag = false;
-
-    // only acting on thread if it has been spawned
-    if (callback_thread) |thread| {
-        thread.join(); // joining the callback thread before deinit memory --> avoid race conditions
-    }
-}
 
 // binding a hotkey --> hotkey does not bind if another hotkey w/ these keys already exists 
 pub fn bindHotkey(keys: [3]VK, p_func: *const fn (*anyopaque) void, p_args_struct: *anyopaque, repeat: bool) !void {
@@ -166,11 +172,11 @@ pub fn bindHotkey(keys: [3]VK, p_func: *const fn (*anyopaque) void, p_args_struc
 }
 
 // freeing memory associated w/ a hotkey bind
-pub fn unbindHotkey(keys: []const VK) !void {
+pub fn unbindHotkey(keys: [3]VK) !void {
     // iterating over slice until keys are found
     var hotkey_id: c_int = -1;
     for (hotkeys_arr) |hotkey_struct| {
-        if (std.meta.eql(hotkey_struct.vks, keys)) {
+        if (std.meta.eql(hotkey_struct.vk_arr, keys)) {
             hotkey_id = hotkey_struct.id; // grabbing ID for win32 unbind func
             break; // move out of for loop once found
         }
@@ -182,18 +188,58 @@ pub fn unbindHotkey(keys: []const VK) !void {
     if (unreg_res == 0) return error.Failed_To_Unregister_Hotkey;
 }
 
-// simulates a while (true) {} without high CPU usage 
+// simulates a while (true) {} without high CPU usage --> also provides callback func calls
 pub fn zeysInfWait() void {
+    var msg: MSG = undefined;
     while (true) {
-        std.time.sleep(10e6);
+        const msg_res: bool = (GetMessageA(&msg, null, 0x0, 0x0) != 0); // pushing recv'd message into "msg" buf
+        if (msg_res == false) { // couldn't get msg --> error occurred (end thread)
+            return;
+        }
+    
+        // responding to a successful hotkey recv
+        if (msg.message == WM_HOTKEY) {
+            // checking if the hotkey is one of the hotkeys that have been activated here --> iterate
+            const hotkey_id: windows.WPARAM = msg.wParam;
+            const i_hotkey: usize = hotkey_id - 1; 
+            if (hotkeys_i_opt == null) return;
+            if (i_hotkey > hotkeys_i_opt.?) return;
+            
+            // grabbing the callback struct
+            const hotkey: Hotkey_Hook_Callback = hotkeys_arr[i_hotkey];
+            const callback_func: *const fn (args: *anyopaque) void = @ptrCast(hotkey.callback);
+            callback_func(hotkey.args);
+        }
     }
 }
 
 // simulates a while (true) {} without high CPU usage but passes when a certain key is pressed
-pub fn waitUntilKeyPressed(virt_key: VK) void {
-    while (isPressed(virt_key) != true) {
-        std.time.sleep(std.time.ns_per_us * 200);
-    }
+pub fn waitUntilKeysPressed(virt_keys: [3]VK) !void {
+    var msg: MSG = undefined;
+    var leave_flag: bool = false;
+
+    try bindHotkey(virt_keys, _trueBoolCallback, &leave_flag, false);
+
+    while (leave_flag == false) {
+        const msg_res: bool = (GetMessageA(&msg, null, 0x0, 0x0) != 0); // pushing recv'd message into "msg" buf
+        if (msg_res == false) { // couldn't get msg --> error occurred (end thread)
+            return;
+        }
+
+        // responding to a successful hotkey recv
+        if (msg.message == WM_HOTKEY) {
+            // checking if the hotkey is one of the hotkeys that have been activated here --> iterate
+            const hotkey_id: windows.WPARAM = msg.wParam;
+            const i_hotkey: usize = hotkey_id - 1; 
+            if (hotkeys_i_opt == null) return;
+            if (i_hotkey > hotkeys_i_opt.?) return;
+            
+            // grabbing the callback struct
+            const hotkey: Hotkey_Hook_Callback = hotkeys_arr[i_hotkey];
+            const callback_func: *const fn (args: *anyopaque) void = @ptrCast(hotkey.callback);
+            callback_func(hotkey.args);
+        }
+    }   
 }
 
 // checking if a key is currently activated
@@ -203,6 +249,8 @@ pub fn isPressed(virt_key: VK) bool {
 
 // checking if a toggle key is currently active
 pub fn isToggled(virt_key: VK) !bool {
+    if (virt_key == VK.UNDEFINED) return false;
+
     // checking if key can be toggled --> return error otherwise
     const toggle_key_avail: bool = switch(virt_key) {
         VK.VK_CAPITAL, VK.VK_NUMLOCK, VK.VK_SCROLL => true,
@@ -296,6 +344,10 @@ pub fn unblockAllUserInput() void {
     BlockInput(false);
 }
 
+// === PUBLIC FUNCTIONS ===
+// ========================
+
+// =========================
 // === PRIVATE FUNCTIONS ===
 
 // collecting the u8 from the specified VK value
@@ -454,9 +506,17 @@ fn _utf32IsNotAscii(pot_ascii_str: []const u32) bool {
     return false;
 }
 
+// flipping the bool bit
+fn _trueBoolCallback(p_val: *anyopaque) void {
+    const p_val_bool: *bool = @ptrCast(p_val);
+    p_val_bool.* = true;
+}
 
+// === PRIVATE FUNCTIONS ===
+// =========================
+
+// ====================
 // === PUBLIC ENUMS ===
-
 
 pub const VK = enum(c_short) { // enum for holding all of the Windows virtual keys --> associates key presses to a value
     UNDEFINED = 0x00,
@@ -635,3 +695,6 @@ pub const VK = enum(c_short) { // enum for holding all of the Windows virtual ke
     VK_PA1 = 0xFD,
     VK_OEM_CLEAR = 0xFE,
 };
+
+// === PUBLIC ENUMS ===
+// ====================
