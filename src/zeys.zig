@@ -94,7 +94,7 @@ const WIN32_CALLBACK_TYPES = enum(u8) {
 
 const Hotkey_Hook_Callback = struct { // used in Msg thread (for calling callback functions)
     id: c_int,   
-    vk_arr: [3]VK,
+    vk_arr: [5]VK,
     callback: *const anyopaque,
     args: *anyopaque,
     back_type: WIN32_CALLBACK_TYPES, 
@@ -120,8 +120,8 @@ var hook_i_opt: ?usize = null;
 // ========================
 // === PUBLIC FUNCTIONS ===
 
-// binding a hotkey --> hotkey does not bind if another hotkey w/ these keys already exists 
-pub fn bindHotkey(keys: [3]VK, p_func: *const fn (*anyopaque) void, p_args_struct: *anyopaque, repeat: bool) !void {
+/// binding a hotkey to a windows WM_HOTKEY message --> hotkey does not bind if another hotkey w/ these keys already exists 
+pub fn bindHotkey(keys: [5]VK, p_func: *const fn (*anyopaque) void, p_args_struct: *anyopaque, repeat: bool) !void {
     // init necessary vars
     var fsModifiers: windows.UINT = 0x0; // init w/o any modifiers
     if (repeat != true) fsModifiers = fsModifiers | 0x4000; // MOD_NOREPEAT --> Changes the hotkey behavior so that the keyboard auto-repeat does not yield multiple hotkey notifications.
@@ -171,8 +171,8 @@ pub fn bindHotkey(keys: [3]VK, p_func: *const fn (*anyopaque) void, p_args_struc
     hotkeys_i_opt = hotkeys_i; // upadating hotkey slice index tracker var
 }
 
-// freeing memory associated w/ a hotkey bind
-pub fn unbindHotkey(keys: [3]VK) !void {
+/// unbinding a hotkey so that WM_HOTKEY messages are no longer sent
+pub fn unbindHotkey(keys: [5]VK) !void {
     // iterating over slice until keys are found
     var hotkey_id: c_int = -1;
     for (hotkeys_arr) |hotkey_struct| {
@@ -188,7 +188,21 @@ pub fn unbindHotkey(keys: [3]VK) !void {
     if (unreg_res == 0) return error.Failed_To_Unregister_Hotkey;
 }
 
-// simulates a while (true) {} without high CPU usage --> also provides callback func calls
+/// packing 5-virtual key array w/ VK.UNDEFINEDs
+pub fn packVirtKeyArray(keys: []VK) ![5]VK {
+    // type checking each argument
+    if (keys.len > 5) return error.Too_Many_Vks_Provided;
+
+    // packing the VK array
+    const keys_vk_arr: [5]VK = .{ VK.UNDEFINED, VK.UNDEFINED, VK.UNDEFINED, VK.UNDEFINED, VK.UNDEFINED, };
+    for (keys) |key| {
+        keys_vk_arr = key; // packing the size 5 VK array w/ user input
+    }
+
+    return keys_vk_arr;
+}
+
+// simulates a while (true) {} without high CPU usage --> also calls callback funcs
 pub fn zeysInfWait() void {
     var msg: MSG = undefined;
     while (true) {
@@ -213,8 +227,8 @@ pub fn zeysInfWait() void {
     }
 }
 
-// simulates a while (true) {} without high CPU usage but passes when a certain key is pressed
-pub fn waitUntilKeysPressed(virt_keys: [3]VK) !void {
+/// mimics zeysInfWait() but passes when a certain key is pressed --> also calls callback funcs that are resultant of WM_HOTKEY messages being sent
+pub fn waitUntilKeysPressed(virt_keys: [5]VK) !void {
     var msg: MSG = undefined;
     var leave_flag: bool = false;
 
@@ -240,14 +254,16 @@ pub fn waitUntilKeysPressed(virt_keys: [3]VK) !void {
             callback_func(hotkey.args);
         }
     }   
+
+    try unbindHotkey(virt_keys);
 }
 
-// checking if a key is currently activated
+/// checking if a key is currently pressed down
 pub fn isPressed(virt_key: VK) bool {
     return ((@as(c_int, _getCurrKeyState(virt_key)) & 0x8000) != 0); // key pressed (down) --> conv to c_int because of bug not allowing c_short to be bitwise AND'd w/ 0x8000 (https://github.com/ziglang/zig/issues/22716)
 }
 
-// checking if a toggle key is currently active
+/// checking if a toggle key is currently active
 pub fn isToggled(virt_key: VK) !bool {
     if (virt_key == VK.UNDEFINED) return false;
 
@@ -261,36 +277,13 @@ pub fn isToggled(virt_key: VK) !bool {
     return ((_getCurrKeyState(virt_key) & 0x0001) != 0); // key toggled (i.e Caps Lock is ON)
 }
 
-// returns the current keyboard's locale identifier
-pub fn getKeyboardLocaleIdAlloc(alloc: std.mem.Allocator) ![]u8 {
-    // casting the buffer to a different type
-    const buf: []u8 = try alloc.alloc(u8, 9); // creating an arr of size==10 (must be minimum size of 9 + 1 for \0)
-    const lpstr_buf_win32: windows.LPSTR = @ptrCast(buf.ptr); // .ptr used instead of &buf to ensure that a ptr to fixed arr is gotten (not ptr to slice start)
-    const res_keyboard_id_grab: windows.BOOL = GetKeyboardLayoutNameA(lpstr_buf_win32); // getting the keyboard layout ID (digits)
-    if (@as(bool, res_keyboard_id_grab) != true) { // checking that GetKeyboardLayoutNameA() was successful
-        return error.cannot_capture_global_keyboard;
-    }
-    return buf;
-}
-
-// checks if a key is a modifier key
-pub fn keyIsModifier(virt_key: VK) bool {
-    const modifier_res: bool = switch (virt_key) {
-        VK.VK_LCONTROL, VK.VK_LSHIFT, VK.VK_LWIN, VK.VK_LMENU,
-        VK.VK_RCONTROL, VK.VK_RSHIFT, VK.VK_RWIN, VK.VK_RMENU, 
-        VK.VK_CONTROL, VK.VK_SHIFT, VK.VK_MENU, => true,
-        else => false,
-    };
-    return modifier_res;
-}
-
-// simulates a person pressing a key 1x times
+/// simulates a person pressing a key 1x times --> 1ms sleep delay provided between WM_KEYDOWN and WM_KEYUP to avoid UB
 pub fn pressAndReleaseKey(virt_key: VK) !void {
     const virt_key_u8: u8 = try _getU8VkFromEnum(virt_key);
     try _pressAndReleaseKeyU8(virt_key_u8);
 }
 
-// pressing the keys associated w/ bytes (can print random bytes to screen) --> fast but does not check
+/// pressing the keys associated w/ provided bytes --> doesn't check for UTF-8 encoding (will print characters >0xff as a u8 bytes)
 pub fn pressKeyString(str: []const u8) !void {
     // iterating over each byte to keyboard print the char
     for (str) |char| {
@@ -318,30 +311,53 @@ pub fn pressKeyString(str: []const u8) !void {
     }
 }
 
-// pressing the keys associated w/ an ASCII string
-pub fn pressKeyStringAsciiSafe(str: []const u8) !void {
-    // checking that string is safe
-    for (str) |char| {
-        if (std.ascii.isPrint(char) != true) return error.Char_Is_Not_Printable;
-    }
-
-    // checking string for non-ASCII layout
-    if (_utf8IsNotAscii(str) or _utf16IsNotAscii(str) or _utf32IsNotAscii(str)) {
-        return error.non_ascii_string_parse;
-    }
-
-    // if string is ASCII-only --> print string (via keyboard)
-    try pressKeyString(str);
+/// returns true if a key is a modifier key
+pub fn keyIsModifier(virt_key: VK) bool {
+    const modifier_res: bool = switch (virt_key) {
+        VK.VK_LCONTROL, VK.VK_LSHIFT, VK.VK_LWIN, VK.VK_LMENU,
+        VK.VK_RCONTROL, VK.VK_RSHIFT, VK.VK_RWIN, VK.VK_RMENU, 
+        VK.VK_CONTROL, VK.VK_SHIFT, VK.VK_MENU, => true,
+        else => false,
+    };
+    return modifier_res;
 }
 
-// blocking all user input (system-wide) --> mouse and keyboard (used for CRITICAL functions)
-pub fn blockAllUserInput() void {
-    BlockInput(true);
+/// returns the Windows current keyboard's locale identifier (hex string)
+pub fn getKeyboardLocaleIdAlloc(alloc: std.mem.Allocator) ![]u8 {
+    // casting the buffer to a different type
+    const buf: []u8 = try alloc.alloc(u8, 9); // creating an arr of size==10 (must be minimum size of 9 + 1 for \0)
+    const lpstr_buf_win32: windows.LPSTR = @ptrCast(buf.ptr); // .ptr used instead of &buf to ensure that a ptr to fixed arr is gotten (not ptr to slice start)
+    const res_keyboard_id_grab: windows.BOOL = GetKeyboardLayoutNameA(lpstr_buf_win32); // getting the keyboard layout ID (digits)
+    if (res_keyboard_id_grab == 0) return error.cannot_capture_global_keyboard; // checking that GetKeyboardLayoutNameA() was successful
+    return buf;
 }
 
-// unblocking all user input (system-wide) --> mouse and keyboard (used for CRITICAL functions)
-pub fn unblockAllUserInput() void {
-    BlockInput(false);
+/// Converts a Windows locale ID (hex string) to a human-readable keyboard locale string.  
+pub fn getKeyboardLocaleStringFromWinLocale(u8_id: []const u8) ![]const u8{
+    // finding the null terminator
+    var null_term_i: usize = 255;
+    for (0..u8_id.len) |i| {
+        if (u8_id[i] == 0) {
+            null_term_i = i;
+            break;
+        }
+    }
+    if (null_term_i >= 255) return error.No_Null_Terminator_Found;
+
+    const u64_id: u64 = try std.fmt.parseInt(u64, u8_id[0..null_term_i], 16);
+    return _getKeyboardLayoutStringFromIdU64(u64_id);
+}
+
+/// REQUIRES ADMIN PRIVILEGES - blocking all user input (system-wide) --> mouse and keyboard (used for CRITICAL functions)
+pub fn blockAllUserInput() !void {
+    const block_res: windows.BOOL = BlockInput(true);
+    if (block_res == 0) return error.Failed_Keyboard_Input_Block;
+}
+
+/// REQUIRES ADMIN PRIVILEGES - unblocking all user input (system-wide) --> mouse and keyboard (used for CRITICAL functions)
+pub fn unblockAllUserInput() !void {
+    const unblock_res: windows.BOOL = BlockInput(false);
+    if (unblock_res == 0) return error.Failed_Keyboard_Input_Unblock;
 }
 
 // === PUBLIC FUNCTIONS ===
@@ -350,23 +366,18 @@ pub fn unblockAllUserInput() void {
 // =========================
 // === PRIVATE FUNCTIONS ===
 
-// collecting the u8 from the specified VK value
-fn _getU8VkFromEnum(virt_key_enum: VK) !u8 {
-    const virt_key_c_short: c_short = @intFromEnum(virt_key_enum); // typecast to allow easy parsing of VK
-    if (virt_key_c_short > 0xff) return error.virt_key_larger_than_u8;
-    return @intCast(virt_key_c_short); // converts to u8 on return
+/// gets the state bitmap of a specified virtual key --> used to check if key as pressed down
+fn _getCurrKeyState(virt_key: VK) c_short {
+    const virt_key_c_short: c_short = @intFromEnum(virt_key); // converting enum val so that it is usable
+    const key_state_short: c_short = GetAsyncKeyState(@as(c_int, virt_key_c_short)); // conv to c_int as per win32 API
+    return key_state_short;
 }
 
-// collecting the virtual key from a char (ASCII)
-fn _getVkFromChar(ex_char: u8) c_short {
-    return VkKeyScanA(ex_char);
-}
-
-// press and release key U8
+/// press and release key U8
 fn _pressAndReleaseKeyU8(virt_key_u8: u8) !void {
     // generating the INPUT signals (structs) for the SendInput win32 func call
-    const key_down_input: INPUT = _pressKeyDownOnlyU8(virt_key_u8);
-    const key_up_input: INPUT = _releaseKeyUpOnlyU8(virt_key_u8);
+    const key_down_input: INPUT = _pressKeyDownGetInputStruct(virt_key_u8);
+    const key_up_input: INPUT = _releaseKeyUpGetInputStruct(virt_key_u8);
     const input_keys: [2]INPUT = .{ key_down_input, key_up_input };
     const p_input_keys: *const INPUT = &input_keys[0]; // creating ptr to first value in array
 
@@ -378,8 +389,8 @@ fn _pressAndReleaseKeyU8(virt_key_u8: u8) !void {
     std.time.sleep(std.time.ns_per_ms); // sleeping for an ms to avoid weird memory overwrites --> keyboard pressing wrong chars
 }
 
-// func for returning the INPUT struct for WM_KEYDOWN
-fn _pressKeyDownOnlyU8(virt_key_u8: u8) INPUT {
+/// func for returning the INPUT struct for WM_KEYDOWN
+fn _pressKeyDownGetInputStruct(virt_key_u8: u8) INPUT {
     const virt_key_u16: u16 = virt_key_u8; // packing for KEYBDINPUT
     const key_down_input: INPUT = .{ // push key down
         .input_type = INPUT_KEYBOARD,
@@ -394,8 +405,8 @@ fn _pressKeyDownOnlyU8(virt_key_u8: u8) INPUT {
     return key_down_input;
 }
 
-// func for returning the INPUT struct for WM_KEYUP 
-fn _releaseKeyUpOnlyU8(virt_key_u8: u8) INPUT {
+/// func for returning the INPUT struct for WM_KEYUP 
+fn _releaseKeyUpGetInputStruct(virt_key_u8: u8) INPUT {
     const virt_key_u16: u16 = virt_key_u8; // packing for KEYBDINPUT
     const key_up_input: INPUT = .{ // push key down
         .input_type = INPUT_KEYBOARD,
@@ -410,7 +421,27 @@ fn _releaseKeyUpOnlyU8(virt_key_u8: u8) INPUT {
     return key_up_input;
 }
 
-// func for returning []INPUT (slice) that contains all inputs that need to be performed for character to be pressed --> includes special chars i.e. '$'
+/// collecting the u8 from the specified VK value
+fn _getU8VkFromEnum(virt_key_enum: VK) !u8 {
+    const virt_key_c_short: c_short = @intFromEnum(virt_key_enum); // typecast to allow easy parsing of VK
+    if (virt_key_c_short > 0xff) return error.virt_key_larger_than_u8;
+    return @intCast(virt_key_c_short); // converts to u8 on return
+}
+
+/// collecting the virtual key from a char (ASCII)
+fn _getVkFromChar(ex_char: u8) c_short {
+    return VkKeyScanA(ex_char);
+}
+
+/// checking for valid INPUT types
+fn _isValidKeyboardInputType(p_input: *const INPUT) bool {
+    if (p_input.*.input_type != INPUT_KEYBOARD) {
+        return false;
+    }
+    return true;
+}
+
+/// func for returning []INPUT (slice) that contains all inputs that need to be performed for character to be pressed --> includes special chars i.e. '$'
 fn _charToInputSliceAlloc(input_slice: []INPUT, ascii_char: u8) ![]INPUT {
     // checking that parsed slice is large enough
     if (input_slice.len != 4) {
@@ -418,7 +449,7 @@ fn _charToInputSliceAlloc(input_slice: []INPUT, ascii_char: u8) ![]INPUT {
     }
 
     // ensuring that the provided value can be typed
-    if (std.ascii.isPrint(ascii_char) != true) {
+    if (std.ascii.isPrint(ascii_char) != true and ascii_char != '\n' and ascii_char != '\t') {
         return error.non_printable_char_parse;
     }
 
@@ -430,13 +461,13 @@ fn _charToInputSliceAlloc(input_slice: []INPUT, ascii_char: u8) ![]INPUT {
     
     // responding to if a modifier is required for the special key to be pressed i.e. shift
     if (special_requires_shift_modifier == true) { // modifier required
-        input_slice[0] = _pressKeyDownOnlyU8(0x10); // shift key
-        input_slice[1] = _pressKeyDownOnlyU8(special_vk_u8);
-        input_slice[2] = _releaseKeyUpOnlyU8(0x10); // shift key
-        input_slice[3] = _releaseKeyUpOnlyU8(special_vk_u8);
+        input_slice[0] = _pressKeyDownGetInputStruct(0x10); // shift key
+        input_slice[1] = _pressKeyDownGetInputStruct(special_vk_u8);
+        input_slice[2] = _releaseKeyUpGetInputStruct(0x10); // shift key
+        input_slice[3] = _releaseKeyUpGetInputStruct(special_vk_u8);
     } else {
-        input_slice[0] = _pressKeyDownOnlyU8(special_vk_u8);
-        input_slice[1] = _releaseKeyUpOnlyU8(special_vk_u8);
+        input_slice[0] = _pressKeyDownGetInputStruct(special_vk_u8);
+        input_slice[1] = _releaseKeyUpGetInputStruct(special_vk_u8);
         input_slice[2] = .{ .input_type = 0xff, .DUMMYUNIONNAME = .{ .ki = KEYBDINPUT {.wVk = 0x0, .wScan = 0x0, .dwFlags = 0x0, .time = 0x0, .dwExtraInfo = 0x0,}}};
         input_slice[3] = .{ .input_type = 0xff, .DUMMYUNIONNAME = .{ .ki = KEYBDINPUT {.wVk = 0x0, .wScan = 0x0, .dwFlags = 0x0, .time = 0x0, .dwExtraInfo = 0x0,}}};
     }
@@ -444,72 +475,230 @@ fn _charToInputSliceAlloc(input_slice: []INPUT, ascii_char: u8) ![]INPUT {
     return input_slice;
 }
 
-// gets the state bitmap of a specified virtual key --> used to check if key as pressed down
-fn _getCurrKeyState(virt_key: VK) c_short {
-    const virt_key_c_short: c_short = @intFromEnum(virt_key); // converting enum val so that it is usable
-    const key_state_short: c_short = GetAsyncKeyState(@as(c_int, virt_key_c_short)); // conv to c_int as per win32 API
-    return key_state_short;
-}
-
-// func that checks keyboard messages in separate thread --> used for callback funcs
-fn _actOnKeyboardMsgs() void {
-    var msg: MSG = undefined;
-
-    // check for O/S messages until the thread is to be closed (flag changed to true)
-    while (run_threads_flag == true) {
-        const msg_res: bool = (GetMessageA(&msg, null, 0x0, 0x0) != 0); // pushing recv'd message into "msg" buf
-        if (msg_res == false) { // couldn't get msg --> error occurred (end thread)
-            return;
-        }
-    
-        // responding to a successful hotkey recv
-        if (msg.message == WM_HOTKEY) {
-            // checking if the hotkey is one of the hotkeys that have been activated here --> iterate
-            const hotkey_id: windows.WPARAM = msg.wParam;
-            const i_hotkey: usize = hotkey_id - 1; 
-            if (hotkeys_i_opt == null) return;
-            if (i_hotkey > hotkeys_i_opt.?) return;
-            
-            std.debug.print("hey\n", .{});
-            
-            // grabbing the callback struct
-            const hotkey: Hotkey_Hook_Callback = hotkeys_arr[i_hotkey];
-            const callback_func: *const fn (args: *anyopaque) void = @ptrCast(hotkey.callback);
-            callback_func(hotkey.args);
-        }
-    }
-}
-
-// checking for valid INPUT types
-fn _isValidKeyboardInputType(p_input: *const INPUT) bool {
-    if (p_input.*.input_type != INPUT_KEYBOARD) {
-        return false;
-    }
-    return true;
-}
-
-// checking if a string (UTF-8 encoded) is not ASCII
-fn _utf8IsNotAscii(pot_ascii_str: []const u8) bool {
-    for (pot_ascii_str) |char_u8| { if (char_u8 > 0x7F) return true; } // iterate over each u8
-    return false;
-}
-
-// checking if a string (UTF-8 encoded) is not ASCII
-fn _utf16IsNotAscii(pot_ascii_str: []const u16) bool {
-    for (pot_ascii_str) |char_u16| { if (char_u16 > 0x7F) return true; } // iterate over each u8
-    return false;
-}
-
-// checking if a string (UTF-16 encoded) is not ASCII
-fn _utf32IsNotAscii(pot_ascii_str: []const u32) bool {
-    for (pot_ascii_str) |char_u32| { if (char_u32 > 0x7F) return true; } // iterate over each u8
-    return false;
-}
-
-// flipping the bool bit
+/// flipping the bool bit
 fn _trueBoolCallback(p_val: *anyopaque) void {
     const p_val_bool: *bool = @ptrCast(p_val);
     p_val_bool.* = true;
+}
+
+/// func to get keyboard layout name from keyboard ID
+fn _getKeyboardLayoutStringFromIdU64(id: u64) ![]const u8{
+
+    // O(1) switch statement
+    const KB_ID: []const u8 = switch (id) {
+        0x00140C00 => "ADLaM",
+        0x0000041C => "Albanian",
+        0x00000401 => "Arabic (101)",
+        0x00010401 => "Arabic (102)",
+        0x00020401 => "Arabic (102) AZERTY",
+        0x0000042B => "Armenian Eastern (Legacy)",
+        0x0002042B => "Armenian Phonetic",
+        0x0003042B => "Armenian Typewriter",
+        0x0001042B => "Armenian Western (Legacy)",
+        0x0000044D => "Assamese - INSCRIPT",
+        0x0001042C => "Azerbaijani (Standard)",
+        0x0000082C => "Azerbaijani Cyrillic",
+        0x0000042C => "Azerbaijani Latin",
+        0x00000445 => "Bangla",
+        0x00020445 => "Bangla - INSCRIPT",
+        0x00010445 => "Bangla - INSCRIPT (Legacy)",
+        0x0000046D => "Bashkir",
+        0x00000423 => "Belarusian",
+        0x0001080C => "Belgian (Comma)",
+        0x00000813 => "Belgian (Period)",
+        0x0000080C => "Belgian French",
+        0x0000201A => "Bosnian (Cyrillic)",
+        0x000B0C00 => "Buginese",
+        0x00030402 => "Bulgarian",
+        0x00010402 => "Bulgarian (Latin)",
+        0x00040402 => "Bulgarian (Phonetic Traditional)",
+        0x00020402 => "Bulgarian (Phonetic)",
+        0x00000402 => "Bulgarian (Typewriter)",
+        0x00001009 => "Canadian French",
+        0x00000C0C => "Canadian French (Legacy)",
+        0x00011009 => "Canadian Multilingual Standard",
+        0x0000085F => "Central Atlas Tamazight",
+        0x00000492 => "Central Kurdish",
+        0x0000045C => "Cherokee Nation",
+        0x0001045C => "Cherokee Phonetic",
+        0x00000804 => "Chinese (Simplified) - US",
+        0x00001004 => "Chinese (Simplified, Singapore) - US",
+        0x00000404 => "Chinese (Traditional) - US",
+        0x00000C04 => "Chinese (Traditional, Hong Kong S.A.R.) - US",
+        0x00001404 => "Chinese (Traditional, Macao S.A.R.) - US",
+        0x00000405 => "Czech",
+        0x00010405 => "Czech (QWERTY)",
+        0x00020405 => "Czech Programmers",
+        0x00000406 => "Danish",
+        0x00000439 => "Devanagari - INSCRIPT",
+        0x00000465 => "Divehi Phonetic",
+        0x00010465 => "Divehi Typewriter",
+        0x00000413 => "Dutch",
+        0x00000C51 => "Dzongkha",
+        0x00004009 => "English (India)",
+        0x00000425 => "Estonian",
+        0x00000438 => "Faeroese",
+        0x0000040B => "Finnish",
+        0x0001083B => "Finnish with Sami",
+        0x0000040C => "French",
+        0x00120C00 => "Futhark",
+        0x00020437 => "Georgian (Ergonomic)",
+        0x00000437 => "Georgian (Legacy)",
+        0x00030437 => "Georgian (MES)",
+        0x00040437 => "Georgian (Old Alphabets)",
+        0x00010437 => "Georgian (QWERTY)",
+        0x00000407 => "German",
+        0x00010407 => "German (IBM)",
+        0x000C0C00 => "Gothic",
+        0x00000408 => "Greek",
+        0x00010408 => "Greek (220)",
+        0x00030408 => "Greek (220) Latin",
+        0x00020408 => "Greek (319)",
+        0x00040408 => "Greek (319) Latin",
+        0x00050408 => "Greek Latin",
+        0x00060408 => "Greek Polytonic",
+        0x0000046F => "Greenlandic",
+        0x00000474 => "Guarani",
+        0x00000447 => "Gujarati",
+        0x00000468 => "Hausa",
+        0x00000475 => "Hawaiian",
+        0x0000040D => "Hebrew",
+        0x0002040D => "Hebrew (Standard)",
+        0x00010439 => "Hindi Traditional",
+        0x0000040E => "Hungarian",
+        0x0001040E => "Hungarian 101-key",
+        0x0000040F => "Icelandic",
+        0x00000470 => "Igbo",
+        0x0000085D => "Inuktitut - Latin",
+        0x0001045D => "Inuktitut - Naqittaut",
+        0x00001809 => "Irish",
+        0x00000410 => "Italian",
+        0x00010410 => "Italian (142)",
+        0x00000411 => "Japanese",
+        0x00110C00 => "Javanese",
+        0x0000044B => "Kannada",
+        0x0000043F => "Kazakh",
+        0x00000453 => "Khmer",
+        0x00010453 => "Khmer (NIDA)",
+        0x00000412 => "Korean",
+        0x00000440 => "Kyrgyz Cyrillic",
+        0x00000454 => "Lao",
+        0x0000080A => "Latin American",
+        0x00000426 => "Latvian",
+        0x00010426 => "Latvian (QWERTY)",
+        0x00020426 => "Latvian (Standard)",
+        0x00070C00 => "Lisu (Basic)",
+        0x00080C00 => "Lisu (Standard)",
+        0x00010427 => "Lithuanian",
+        0x00000427 => "Lithuanian IBM",
+        0x00020427 => "Lithuanian Standard",
+        0x0000046E => "Luxembourgish",
+        0x0000042F => "Macedonian",
+        0x0001042F => "Macedonian - Standard",
+        0x0000044C => "Malayalam",
+        0x0000043A => "Maltese 47-Key",
+        0x0001043A => "Maltese 48-Key",
+        0x00000481 => "Maori",
+        0x0000044E => "Marathi",
+        0x00000850 => "Mongolian (Mongolian Script)",
+        0x00000450 => "Mongolian Cyrillic",
+        0x00010C00 => "Myanmar (Phonetic order)",
+        0x00130C00 => "Myanmar (Visual order)",
+        0x00001409 => "NZ Aotearoa",
+        0x00000461 => "Nepali",
+        0x00020C00 => "New Tai Lue",
+        0x00000414 => "Norwegian",
+        0x0000043B => "Norwegian with Sami",
+        0x00090C00 => "N'Ko",
+        0x00000448 => "Odia",
+        0x00040C00 => "Ogham",
+        0x000D0C00 => "Ol Chiki",
+        0x000F0C00 => "Old Italic",
+        0x00150C00 => "Osage",
+        0x000E0C00 => "Osmanya",
+        0x00000463 => "Pashto (Afghanistan)",
+        0x00000429 => "Persian",
+        0x00050429 => "Persian (Standard)",
+        0x000A0C00 => "Phags-pa",
+        0x00010415 => "Polish (214)",
+        0x00000415 => "Polish (Programmers)",
+        0x00000816 => "Portuguese",
+        0x00000416 => "Portuguese (Brazil ABNT)",
+        0x00010416 => "Portuguese (Brazil ABNT2)",
+        0x00000446 => "Punjabi",
+        0x00000418 => "Romanian (Legacy)",
+        0x00020418 => "Romanian (Programmers)",
+        0x00010418 => "Romanian (Standard)",
+        0x00000419 => "Russian",
+        0x00010419 => "Russian (Typewriter)",
+        0x00020419 => "Russian - Mnemonic",
+        0x00000485 => "Sakha",
+        0x0002083B => "Sami Extended Finland-Sweden",
+        0x0001043B => "Sami Extended Norway",
+        0x00011809 => "Scottish Gaelic",
+        0x00000C1A => "Serbian (Cyrillic)",
+        0x0000081A => "Serbian (Latin)",
+        0x0000046C => "Sesotho sa Leboa",
+        0x00000432 => "S>etswana",
+        0x0000045B => "Sinhala",
+        0x0001045B => "Sinhala - Wij 9",
+        0x0000041B => "Slovak",
+        0x0001041B => "Slovak (QWERTY)",
+        0x00000424 => "Slovenian",
+        0x00100C00 => "Sora",
+        0x0001042E => "Sorbian Extended",
+        0x0002042E => "Sorbian Standard",
+        0x0000042E => "Sorbian Standard (Legacy)",
+        0x0000040A => "Spanish",
+        0x0001040A => "Spanish Variation",
+        0x0000041A => "Standard",
+        0x0000041D => "Swedish",
+        0x0000083B => "Swedish with Sami",
+        0x0000100C => "Swiss French",
+        0x00000807 => "Swiss German",
+        0x0000045A => "Syriac",
+        0x0001045A => "Syriac Phonetic",
+        0x00030C00 => "Tai Le",
+        0x00000428 => "Tajik",
+        0x00000449 => "Tamil",
+        0x00020449 => "Tamil 99",
+        0x00030449 => "Tamil Anjal",
+        0x00010444 => "Tatar",
+        0x00000444 => "Tatar (Legacy)",
+        0x0000044A => "Telugu",
+        0x0000041E => "Thai Kedmanee",
+        0x0002041E => "Thai Kedmanee (non-ShiftLock)",
+        0x0001041E => "Thai Pattachote",
+        0x0003041E => "Thai Pattachote (non-ShiftLock)",
+        0x00000451 => "Tibetan (PRC)",
+        0x00010451 => "Tibetan (PRC) - Updated",
+        0x0000105F => "Tifinagh (Basic)",
+        0x0001105F => "Tifinagh (Extended)",
+        0x00010850 => "Traditional Mongolian (Standard)",
+        0x0001041F => "Turkish F",
+        0x0000041F => "Turkish Q",
+        0x00000442 => "Turkmen",
+        0x00000409 => "US",
+        0x00050409 => "US English Table for IBM Arabic 238_L",
+        0x00000422 => "Ukrainian",
+        0x00020422 => "Ukrainian (Enhanced)",
+        0x00000809 => "United Kingdom",
+        0x00000452 => "United Kingdom Extended",
+        0x00010409 => "United States-Dvorak",
+        0x00030409 => "United States-Dvorak for left hand",
+        0x00040409 => "United States-Dvorak for right hand",
+        0x00020409 => "United States-International",
+        0x00000420 => "Urdu",
+        0x00010480 => "U>yghur",
+        0x00000480 => "Uyghur (Legacy)",
+        0x00000843 => "Uzbek Cyrillic",
+        0x0000042A => "Vietnamese",
+        0x00000488 => "Wolof",
+        0x0000046A => "Yoruba",
+        else => return error.Invalid_Keyboard_Hex_String_Provided
+    };
+
+    return KB_ID;
 }
 
 // === PRIVATE FUNCTIONS ===
