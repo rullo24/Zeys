@@ -94,7 +94,7 @@ const WIN32_CALLBACK_TYPES = enum(u8) {
 
 const Hotkey_Hook_Callback = struct { // used in Msg thread (for calling callback functions)
     id: c_int,   
-    vk_arr: [5]VK,
+    vk_arr: []const VK,
     callback: *const anyopaque,
     args: *anyopaque,
     back_type: WIN32_CALLBACK_TYPES, 
@@ -121,11 +121,13 @@ var hook_i_opt: ?usize = null;
 // === PUBLIC FUNCTIONS ===
 
 /// binding a hotkey to a windows WM_HOTKEY message --> hotkey does not bind if another hotkey w/ these keys already exists 
-pub fn bindHotkey(keys: [5]VK, p_func: *const fn (*anyopaque) void, p_args_struct: *anyopaque, repeat: bool) !void {
+pub fn bindHotkey(keys: []const VK, p_func: *const fn (*anyopaque) void, p_args_struct: *anyopaque, repeat: bool) !void {
     // init necessary vars
     var fsModifiers: windows.UINT = 0x0; // init w/o any modifiers
     if (repeat != true) fsModifiers = fsModifiers | 0x4000; // MOD_NOREPEAT --> Changes the hotkey behavior so that the keyboard auto-repeat does not yield multiple hotkey notifications.
     var base_key_opt: ?windows.UINT = null; // virtual key of the non-modifier key
+
+    if (keys.len > 5) return error.Too_Many_Keys_Provided;
 
     // adding modifiers to fsModifiers param --> NOTE: RegisterHotKey treats L/R modifiers as equal (use hook for individuals)
     for (keys) |key| {
@@ -172,10 +174,12 @@ pub fn bindHotkey(keys: [5]VK, p_func: *const fn (*anyopaque) void, p_args_struc
 }
 
 /// unbinding a hotkey so that WM_HOTKEY messages are no longer sent
-pub fn unbindHotkey(keys: [5]VK) !void {
+pub fn unbindHotkey(keys: []const VK) !void {
+    if (keys.len > 5) return error.Too_Many_Keys_Provided;   
+
     // iterating over slice until keys are found
     var hotkey_id: c_int = -1;
-    for (hotkeys_arr) |hotkey_struct| {
+    for (hotkeys_arr) |hotkey_struct| { // uses global var --> checking equivalence
         if (std.meta.eql(hotkey_struct.vk_arr, keys)) {
             hotkey_id = hotkey_struct.id; // grabbing ID for win32 unbind func
             break; // move out of for loop once found
@@ -186,20 +190,6 @@ pub fn unbindHotkey(keys: [5]VK) !void {
     // unregister based on ID that is provided in hotkey specifying
     const unreg_res: windows.BOOL = UnregisterHotKey(null, hotkey_id);
     if (unreg_res == 0) return error.Failed_To_Unregister_Hotkey;
-}
-
-/// packing 5-virtual key array w/ VK.UNDEFINEDs
-pub fn packVirtKeyArray(keys: []VK) ![5]VK {
-    // type checking each argument
-    if (keys.len > 5) return error.Too_Many_Vks_Provided;
-
-    // packing the VK array
-    const keys_vk_arr: [5]VK = .{ VK.UNDEFINED, VK.UNDEFINED, VK.UNDEFINED, VK.UNDEFINED, VK.UNDEFINED, };
-    for (keys) |key| {
-        keys_vk_arr = key; // packing the size 5 VK array w/ user input
-    }
-
-    return keys_vk_arr;
 }
 
 // simulates a while (true) {} without high CPU usage --> also calls callback funcs
@@ -228,10 +218,11 @@ pub fn zeysInfWait() void {
 }
 
 /// mimics zeysInfWait() but passes when a certain key is pressed --> also calls callback funcs that are resultant of WM_HOTKEY messages being sent
-pub fn waitUntilKeysPressed(virt_keys: [5]VK) !void {
+pub fn waitUntilKeysPressed(virt_keys: []const VK) !void {
     var msg: MSG = undefined;
     var leave_flag: bool = false;
 
+    if (virt_keys.len > 5) return error.Too_Many_Virt_Keys;
     try bindHotkey(virt_keys, _trueBoolCallback, &leave_flag, false);
 
     while (leave_flag == false) {

@@ -14,9 +14,9 @@ pub fn main() !void {
     // pressing and release showcase
     try zeys.pressAndReleaseKey(zeys.VK.VK_0);
     std.time.sleep(std.time.ns_per_s); // wait 1s
-    try zeys.pressAndReleaseKey(zeys.VK.VK_0);
+    try zeys.pressAndReleaseKey(zeys.VK.VK_4);
     std.time.sleep(std.time.ns_per_s); // wait 1s
-    try zeys.pressAndReleaseKey(zeys.VK.VK_0);
+    try zeys.pressAndReleaseKey(zeys.VK.VK_9);
     std.time.sleep(std.time.ns_per_s); // wait 1s
 
     for (0..50) |i| { // pressing 'a' x50
