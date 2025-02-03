@@ -11,7 +11,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    b.addModule("zeys", .{
+    _ = b.addModule("zeys", .{
         .root_source_file = b.path("src/zeys.zig"),
         .target = target,
         .optimize = optimize,
