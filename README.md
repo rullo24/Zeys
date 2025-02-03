@@ -18,6 +18,43 @@ NOTE: Currently, the module only supports Windows. Linux support will be conside
 - Locale Information: Retrieve the current keyboard locale and map it to a human-readable format.
 - Custom Callbacks: Set up custom functions that will be executed when specific keys or hotkeys are pressed.
 
+## Installation
+To install zeys, simply copy the singular src file "zeys.zig" from this repo to your project repo. 
+```zig
+git clone https://github.com/rullo24/Zeys
+```
+To include Zeys as a module in your Zig code, simply add the module in your build.zig file. An example is shown below.
+
+### Installation - Example
+```zig
+const std = @import("std");
+
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimise = b.standardOptimizeOption(.{});
+
+    // creating executable
+    const exe = b.addExecutable(.{ 
+        .name = "your_exe"
+        .root_source_file = b.path("./relative_path_to_your_exe"),
+        .target = target,
+        .optimize = optimise,
+    });
+
+    // defining the Zeys keyboard library as a module
+    const zeys_module = b.addModule("zeys", .{
+        .root_source_file = b.path("./relative_path_to_zeys.zig"),
+    });
+
+    // linking libraries to each executable
+    exe.root_module.addImport("zeys", zeys_module); // adding the zeys code to the example
+    exe.linkSystemLibrary("user32"); // not required but good practice (libs linked by extern "user32" near function src code)
+
+    // creating an artifact (exe)
+    b.installArtifact(exe);
+}
+```
+
 ## API
 ```zig
 /// Binds a hotkey to a Windows WM_HOTKEY message.
@@ -93,38 +130,32 @@ blockAllUserInput() !void
 unblockAllUserInput() !void
 ```
 
-## Installation
-To install zeys, simply the singular src file "zeys.zig" from this repo and clone it to your project repo. To include Zeys as a module in your Zig code, simply add the module in your build.zig file. 
+## Important Background Information - Virtual Keys (VK)
+Virtual keys are constants used by the Windows API to represent keyboard keys. These constants are part of the enum(c_short) declaration in Zeys and correspond to both standard and special keys i.e. function keys (F1-F12), numeric keypad keys, and modifier keys (e.g., Shift, Ctrl, Alt).
 
-### Installation - Example
+This enum allows for more manageable code when working with keyboard inputs, as you can use meaningful names like VK_A, VK_RETURN (enter), and VK_SHIFT instead of raw numeric values. Virtual keys are essential for simulating key presses and managing hotkeys in the Zeys module.
+
+List of Common Virtual Keys
+- Standard Keys: VK_A, VK_B, VK_C, ..., VK_Z
+- Numeric Keys: VK_0, VK_1, VK_2, ..., VK_9
+- Function Keys: VK_F1, VK_F2, VK_F3, ..., VK_F24
+- Modifiers: VK_SHIFT, VK_CONTROL, VK_MENU, VK_LSHIFT, VK_RSHIFT
+- Navigation Keys: VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT
+- Toggle Keys: VK_CAPITAL (Caps Lock), VK_NUMLOCK, VK_SCROLL
+- More VKs (view zeys.zig)
+
+### Virtual Keys - Example Usage
+Here’s how you can use the virtual keys in Zeys to simulate key presses or bind hotkeys:
 ```zig
-const std = @import("std");
+// Simulating a key press of the "A" key
+pressAndReleaseKey(zeys.VK.VK_A); // Simulates pressing and releasing the 'A' key
 
-pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
-    const optimise = b.standardOptimizeOption(.{});
-
-    // creating executable
-    const exe = b.addExecutable(.{ 
-        .name = "your_exd"
-        .root_source_file = b.path("./relative_path_to_your_exe"),
-        .target = target,
-        .optimize = optimise,
-    });
-
-    // defining the Zeys keyboard library as a module
-    const zeys_module = b.addModule("zeys", .{
-        .root_source_file = b.path("../src/zeys.zig"),
-    });
-
-    // linking libraries to each executable
-    exe.root_module.addImport("zeys", zeys_module); // adding the zeys code to the example
-    exe.linkSystemLibrary("user32"); // not required but good practice (libs linked by extern "user32" near function src code)
-
-    // creating an artifact (exe)
-    b.installArtifact(exe);
-}
+// Binding a hotkey to Ctrl+Shift+Z
+try zeys.bindHotkey( &[_]zeys.VK{ zeys.VK.VK_Z, zeys.VK.VK_CONTROL, zeys.VK.VK_SHIFT, }, &tester_func_1, @constCast(&.{}), false);
 ```
+
+These virtual keys are used throughout the Zeys module for functions like bindHotkey(), pressAndReleaseKey(), isPressed(), and more. They help to ensure that the module can interact with the system in a way that aligns with Windows' key-coding conventions.
+
 
 ## Usage
 ### Binding a Hotkey
@@ -175,7 +206,7 @@ blockAllUserInput();
 ```
 
 ## More Examples
-For more example usage of the library, please check the ./example directory included in this repo. This explains in higher detail the intricacies of the project.
+For more example usage of the library, please check the *./example* directory included in this repo. This folder explains in higher detail the intricacies of the project.
 
 ## Windows API Functions Used
 This module relies on several Windows API functions to interact with the system's keyboard and input functionality. Some of the key functions used include:
