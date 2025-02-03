@@ -2,24 +2,35 @@ const std = @import("std");
 const zeys = @import("zeys");
 const print = std.debug.print;
 
+/// Demonstrates waiting for specific key presses using zeys.
+/// This program listens for individual and combination key presses before proceeding.
 pub fn main() !void {
-    // array of size 5 used to accomodate for max num of keys that can be set as a hotkey
-    // i.e. basekey + SHIFT_MODIFIER + CTRL_MODIFIER + ALT_MODIFIER + WIN_MODIFIER
+    // IMPORTANT NOTE: There are currently issues w/ binding to VK_LWIN or VK_RWIN --> use other keys for hotkey binding
 
-    // IMPORTANT NOTE: must pack the array with UNDEFINED for non-used keys --> func takes [5]zeys.VK as argument
     std.debug.print("Step 1: Waiting for A Key Press\n", .{});
-    // const packed_virt_keys_1 = try zeys.packVirtKeyArray( &[_]zeys.VK{ zeys.VK.VK_A } );
-    try zeys.waitUntilKeysPressed( &[_]zeys.VK{ zeys.VK.VK_A } );
+    // Wait until the 'A' key is pressed
+    try zeys.waitUntilKeysPressed( &[_]zeys.VK{ zeys.VK.VK_A } ); 
     std.debug.print("A Pressed\n", .{});
 
     std.debug.print("Step 2: Waiting for B + CTRL Key Press\n", .{});
-    // const packed_virt_keys_2 = [_]zeys.VK{ zeys.VK.VK_B, zeys.VK.VK_CONTROL, zeys.VK.UNDEFINED, zeys.VK.UNDEFINED, zeys.VK.UNDEFINED };
-    try zeys.waitUntilKeysPressed( &[_]zeys.VK{ zeys.VK.VK_B, zeys.VK.VK_CONTROL, zeys.VK.UNDEFINED, zeys.VK.UNDEFINED, zeys.VK.UNDEFINED } );
+    // Wait until 'B' and 'CTRL' keys are pressed simultaneously
+    try zeys.waitUntilKeysPressed( &[_]zeys.VK{ zeys.VK.VK_B, zeys.VK.VK_CONTROL, zeys.VK.UNDEFINED, });
     std.debug.print("B + CTRL Pressed\n", .{});
 
-    std.debug.print("Step 3: Waiting for C + SHIFT + LWIN Key Press\n", .{});
-    // const packed_virt_keys_3 = try zeys.packVirtKeyArray( &[_]zeys.VK{ zeys.VK.VK_C, zeys.VK.VK_SHIFT, zeys.VK.VK_LWIN });
-    try zeys.waitUntilKeysPressed( &[_]zeys.VK{ zeys.VK.VK_C, zeys.VK.VK_SHIFT, zeys.VK.VK_LWIN } );
-    std.debug.print("C + SHIFT + LWIN Pressed\n", .{});
+    std.debug.print("Step 3: Waiting for C + SHIFT + CTRL Key Press\n", .{});
+    // Wait until 'C', 'SHIFT', and 'Left Windows' keys are pressed together
+    try zeys.waitUntilKeysPressed( &[_]zeys.VK{ zeys.VK.VK_C, zeys.VK.VK_SHIFT, zeys.VK.VK_CONTROL } );
+    std.debug.print("C + SHIFT + CTRL Pressed\n", .{});
+
+    std.debug.print("Step 4: Waiting for D + SHIFT + ALT + CTRL Key Press\n", .{});
+    // Wait until 'C', 'SHIFT', and 'Left Windows' keys are pressed together
+    try zeys.waitUntilKeysPressed( &[_]zeys.VK{ zeys.VK.VK_D, zeys.VK.VK_SHIFT, zeys.VK.VK_MENU, zeys.VK.VK_CONTROL, });
+    std.debug.print("D + SHIFT + ALT + CTRL Pressed\n", .{});
+
+    std.debug.print("Step 5: You cannot parse more than 5x keys to any key function\n", .{});
+    std.time.sleep(std.time.ns_per_s);
+    _ = zeys.waitUntilKeysPressed( &[_]zeys.VK{ zeys.VK.VK_D, zeys.VK.VK_SHIFT, zeys.VK.VK_MENU, zeys.VK.VK_CONTROL, zeys.VK.VK_LCONTROL, zeys.VK.UNDEFINED }) catch {
+        std.debug.print("An error was found here (as expected)\n", .{});
+    };
 
 }

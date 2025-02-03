@@ -1,13 +1,20 @@
 const std = @import("std");
 const zeys = @import("zeys");
 
-/// input blocking is used to stop the user from interacting w/ the system temporarily
-/// NOTE: input blocking requires Admin privileges
+/// Demonstrates temporarily blocking and unblocking user input.
+/// This prevents the user from interacting with the system for a short duration.
+/// 
+/// NOTE: Blocking input requires administrative privileges.
 pub fn main() !void {
-    // blocking, waiting for 3 seconds and then unblocking keyboard input
+    // Block all user input (keyboard and mouse) 
     try zeys.blockAllUserInput();
+    
+    // Keep input blocked for 3 seconds (3 billion nanoseconds)
     std.time.sleep(std.time.ns_per_s * 3);
 
+    // Unblock user input, restoring normal system interaction
     try zeys.unblockAllUserInput();
+    
+    // Wait for another 3 seconds before the program exits
     std.time.sleep(std.time.ns_per_s * 3);
 }

@@ -1,21 +1,11 @@
 const std = @import("std");
 const zeys = @import("zeys");
 
-/// isToggled() checks if a togglable key is currently in the active toggle mode i.e. CAPS_LOCK, SCREEN_LOCK or NUM_LOCK
+/// Demonstrates the usage of `isToggled()` to check the state of toggle keys like CAPS_LOCK, NUM_LOCK, etc.
 pub fn main() !void {
-    const example_version: u8 = 1;
-
-    // EXAMPLE 1
-    if (example_version == 1) {
-        while (true) {
-            std.debug.print("Caps Lock Toggle State: {any}\n", .{ zeys.isToggled(zeys.VK.VK_CAPITAL) });
-        }   
-    }
-
-    // EXAMPLE 2
-    if (example_version == 2) {
-        while (zeys.isToggled(zeys.VK.VK_NUMLOCK) != true) {
-            std.time.sleep(std.time.ns_per_ms * 20);
-        }
+    // EXAMPLE 1: Print the current state of the Caps Lock key in an infinite loop
+    while (true) {
+        std.debug.print("Caps Lock Toggle State: {any}\n", .{ try zeys.isToggled(zeys.VK.VK_CAPITAL) });
+        std.time.sleep(std.time.ns_per_ms * 50); // sleep for 50ms before next check
     }
 }

@@ -19,6 +19,7 @@ const WM_KEYDOWN = 0x0100;
 const WM_HOTKEY = 0x0312; 
 
 extern "user32" fn GetAsyncKeyState(vKey: c_int) c_short;
+extern "user32" fn GetKeyState(nVirtKey: c_int) c_short;
 extern "user32" fn BlockInput(block_flag: bool) windows.BOOL;
 extern "user32" fn GetForegroundWindow() windows.HWND;
 extern "user32" fn VkKeyScanA(ch: u8) c_short;
@@ -251,7 +252,7 @@ pub fn waitUntilKeysPressed(virt_keys: []const VK) !void {
 
 /// checking if a key is currently pressed down
 pub fn isPressed(virt_key: VK) bool {
-    return ((@as(c_int, _getCurrKeyState(virt_key)) & 0x8000) != 0); // key pressed (down) --> conv to c_int because of bug not allowing c_short to be bitwise AND'd w/ 0x8000 (https://github.com/ziglang/zig/issues/22716)
+    return ( (@as(c_int, _getCurrKeyStateAsync(virt_key)) & 0x8000) != 0); // key pressed (down) --> conv to c_int because of bug not allowing c_short to be bitwise AND'd w/ 0x8000 (https://github.com/ziglang/zig/issues/22716)
 }
 
 /// checking if a toggle key is currently active
@@ -265,7 +266,7 @@ pub fn isToggled(virt_key: VK) !bool {
     };
     if (toggle_key_avail != true) return error.InvalidToggleKeyParse; // returning error to avoid confusion
 
-    return ((_getCurrKeyState(virt_key) & 0x0001) != 0); // key toggled (i.e Caps Lock is ON)
+    return ( @as(c_int, (_getCurrKeyState(virt_key) & 0x0001)) != 0); // key toggled (i.e Caps Lock is ON)
 }
 
 /// simulates a person pressing a key 1x times --> 1ms sleep delay provided between WM_KEYDOWN and WM_KEYUP to avoid UB
@@ -358,9 +359,16 @@ pub fn unblockAllUserInput() !void {
 // === PRIVATE FUNCTIONS ===
 
 /// gets the state bitmap of a specified virtual key --> used to check if key as pressed down
-fn _getCurrKeyState(virt_key: VK) c_short {
+fn _getCurrKeyStateAsync(virt_key: VK) c_short {
     const virt_key_c_short: c_short = @intFromEnum(virt_key); // converting enum val so that it is usable
     const key_state_short: c_short = GetAsyncKeyState(@as(c_int, virt_key_c_short)); // conv to c_int as per win32 API
+    return key_state_short;
+}
+
+/// gets the state bitmap of a specified virtual key --> used to check if key as pressed down
+fn _getCurrKeyState(virt_key: VK) c_short {
+    const virt_key_c_short: c_short = @intFromEnum(virt_key); // converting enum val so that it is usable
+    const key_state_short: c_short = GetKeyState(@as(c_int, virt_key_c_short)); // conv to c_int as per win32 API
     return key_state_short;
 }
 
