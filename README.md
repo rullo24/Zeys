@@ -223,5 +223,7 @@ Zeys uses Zig's built-in error handling for common failure scenarios, such as:
 - Issues with sending key inputs or blocking/unblocking input.
 - And more
 
-## Disclaimer
+## License
 This module is provided as-is. I am not responsible for any misuse or unintended consequences that may result from using this module. Please use it responsibly and ensure you have proper safeguards in place before using any functions that block input or simulate key presses.
+
+This project is licensed under the MIT License - see the LICENSE file for details.
