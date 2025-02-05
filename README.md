@@ -19,39 +19,55 @@ NOTE: Currently, the module only supports Windows. Linux support will be conside
 - Custom Callbacks: Set up custom functions that will be executed when specific keys or hotkeys are pressed.
 
 ## Installation
-To install zeys, simply copy the singular src file "zeys.zig" from this repo to your project repo. 
-```zig
-git clone https://github.com/rullo24/Zeys
-```
-To include Zeys as a module in your Zig code, simply add the module in your build.zig file. An example is shown below.
+NOTE: At the time of Zeys v1.1.0's release, this code works on Zig v0.13.0 (the latest release).
 
-### Installation - Example
+Thanks to SuSonicTH, I have had some help in updating this repo (v1.1.0) to allow for it to be downloaded via Zig's built-in package manager (zon). 
+
+To use Zeys in your project, simply follow the process below:
+1. Fetch the Zeys repo from within one of the project's folders (must have a build.zig). This will automatically add the dependency to your project's build.zig.zon file (or create one if this currently does not exist).
+    - An example for importing Zeys v1.1.0 is shown below
+```zig
+zig fetch --save "https://github.com/rullo24/Zeys/archive/refs/tags/v1.1.0.tar.gz"
+```
+2. Add the Zeys dependency to your build.zig file
+    - An example is shown below (build.zig)
 ```zig
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
     const optimise = b.standardOptimizeOption(.{});
+    const target = b.standardTargetOptions(.{});
 
-    // creating executable
-    const exe = b.addExecutable(.{ 
-        .name = "your_exe"
-        .root_source_file = b.path("./relative_path_to_your_exe"),
+    const zeys = b.dependency("Zeys", .{
         .target = target,
         .optimize = optimise,
     });
 
-    // defining the Zeys keyboard library as a module
-    const zeys_module = b.addModule("zeys", .{
-        .root_source_file = b.path("./relative_path_to_zeys.zig"),
+    const exe = b.addExecutable(.{
+        .name = "tester",
+        .root_source_file = b.path("test_zeys.zig"),
+        .optimize = optimise,
+        .target = target,
     });
 
-    // linking libraries to each executable
-    exe.root_module.addImport("zeys", zeys_module); // adding the zeys code to the example
-    exe.linkSystemLibrary("user32"); // not required but good practice (libs linked by extern "user32" near function src code)
-
-    // creating an artifact (exe)
+    exe.root_module.addImport("zeys", zeys.module("zeys"));
     b.installArtifact(exe);
+}
+```
+3. Import the Zeys module at the top of your code using the "@import" method
+    - An example is shown below (test_zeys.zig)
+```zig
+const std = @import("std");
+const zeys = @import("zeys");
+
+pub fn main() void {
+    while (true) {
+        if (zeys.isPressed(zeys.VK.VK_A) == true) {
+            std.debug.print("ON\n", .{});
+        }
+    }
+
+    return;
 }
 ```
 
