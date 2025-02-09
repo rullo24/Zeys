@@ -242,7 +242,7 @@ pub fn waitUntilKeysPressed(virt_keys: []const VK) !void {
             
             // grabbing the callback struct
             const hotkey: Hotkey_Hook_Callback = hotkeys_arr[i_hotkey];
-            const callback_func: *const fn (args: *anyopaque) void = @ptrCast(hotkey.callback);
+            const callback_func: *const fn (args: *anyopaque) void = @ptrCast(@alignCast(hotkey.callback));
             callback_func(hotkey.args);
         }
     }   
