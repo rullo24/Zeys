@@ -1,6 +1,7 @@
 .{
-    .name = "Zeys",
-    .version = "1.1.0",
+    .name = .Zeys,
+    .version = "1.2.0",
+    .fingerprint = 0xfc19db285793986a,
 
     .dependencies = .{},
 
