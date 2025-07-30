@@ -182,7 +182,11 @@ pub fn bindHotkey(keys: []const VK, p_func: *const fn (*anyopaque) void, p_args_
     hotkeys_i_opt = hotkeys_i; // upadating hotkey slice index tracker var
 }
 
-/// unbinding a hotkey so that WM_HOTKEY messages are no longer sent
+/// ### Description
+/// Unbinds a previously registered system-wide hotkey so that WM_HOTKEY messages are no longer sent.
+///
+/// ### Parameters
+/// - `keys`: A slice of virtual keys (`VK`) representing the combination to unbind. The slice must match exactly the hotkey registered earlier. Maximum length of 5 keys allowed.
 pub fn unbindHotkey(keys: []const VK) !void {
     if (keys.len > 5) return error.Too_Many_Keys_Provided;   
 
@@ -201,7 +205,8 @@ pub fn unbindHotkey(keys: []const VK) !void {
     if (unreg_res == 0) return error.Failed_To_Unregister_Hotkey;
 }
 
-// simulates a while (true) {} without high CPU usage --> also calls callback funcs
+/// ### Description
+/// Enters an event loop that waits indefinitely for WM_HOTKEY messages and invokes their associated callback functions. This loop uses `GetMessageA` to avoid high CPU usage.
 pub fn zeysInfWait() void {
     var msg: MSG = undefined;
     while (true) {
@@ -312,7 +317,11 @@ pub fn isToggled(virt_key: VK) !bool {
     return ( @as(c_int, (_getCurrKeyState(virt_key) & 0x0001)) != 0); // key toggled (i.e Caps Lock is ON)
 }
 
-/// simulates a person pressing a key 1x times --> 1ms sleep delay provided between WM_KEYDOWN and WM_KEYUP to avoid UB
+/// ### Description
+/// Simulates a single key press and release for the specified virtual key.
+///
+/// ### Parameters
+/// - `virt_key`: The virtual key code (`VK`) representing the key to simulate.
 pub fn pressAndReleaseKey(virt_key: VK) !void {
     const virt_key_u8: u8 = try _getU8VkFromEnum(virt_key);
     try _pressAndReleaseKeyU8(virt_key_u8);
