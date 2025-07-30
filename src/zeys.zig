@@ -323,7 +323,7 @@ pub fn isToggled(virt_key: VK) !bool {
 /// ### Parameters
 /// - `virt_key`: The virtual key code (`VK`) representing the key to simulate.
 pub fn pressAndReleaseKey(virt_key: VK) !void {
-    const virt_key_u8: u8 = try _getU8VkFromEnum(virt_key);
+    const virt_key_u8: u8 = try _getCharFromVkEnum(virt_key);
     try _pressAndReleaseKeyU8(virt_key_u8);
 }
 
@@ -438,6 +438,39 @@ pub fn unblockAllUserInput() !void {
     if (unblock_res == 0) return error.Failed_Keyboard_Input_Unblock;
 }
 
+/// ### Description
+/// Converts a virtual key enum (`VK`) to its corresponding `u8` representation.
+///
+/// ### Parameters
+/// - `virt_key_enum`: The virtual key enum value to convert.
+pub fn getCharFromVkEnum(virt_key_enum: VK) !u8 {
+    const virt_key_c_short: c_short = @intFromEnum(virt_key_enum); // typecast to allow easy parsing of VK
+    if (virt_key_c_short > 0xff) return error.virt_key_larger_than_u8;
+    return @intCast(virt_key_c_short); // converts to u8 on return
+}
+
+/// ### Description
+/// Converts a `c_short` integer value to its corresponding virtual key enum (`VK`).
+///
+/// ### Parameters
+/// - `vk_short`: The `c_short` integer representing a virtual key code.
+pub fn getVkEnumFromCShort(vk_short: c_short) !VK {
+    const vk_enum: VK = std.meta.intToEnum(VK, vk_short) catch {
+        return error.VK_ENUM_UNOBTAINABLE_FROM_PARSED_C_SHORT;
+    };
+    return vk_enum;
+}
+
+/// ### Description
+/// Retrieves the virtual key code corresponding to the given ASCII character.
+///
+/// ### Parameters
+/// - `ex_char`: An ASCII character (`u8`).
+pub fn getVkFromChar(ex_char: u8) c_short {
+    return VkKeyScanA(ex_char);
+}
+
+
 // === PUBLIC FUNCTIONS ===
 // ========================
 
@@ -525,38 +558,6 @@ fn _releaseKeyUpGetInputStruct(virt_key_u8: u8) INPUT {
         }}
     };
     return key_up_input;
-}
-
-/// ### Description
-/// Converts a virtual key enum (`VK`) to its corresponding `u8` representation.
-///
-/// ### Parameters
-/// - `virt_key_enum`: The virtual key enum value to convert.
-fn _getU8VkFromEnum(virt_key_enum: VK) !u8 {
-    const virt_key_c_short: c_short = @intFromEnum(virt_key_enum); // typecast to allow easy parsing of VK
-    if (virt_key_c_short > 0xff) return error.virt_key_larger_than_u8;
-    return @intCast(virt_key_c_short); // converts to u8 on return
-}
-
-/// ### Description
-/// Converts a `c_short` integer value to its corresponding virtual key enum (`VK`).
-///
-/// ### Parameters
-/// - `vk_short`: The `c_short` integer representing a virtual key code.
-fn _getVkEnumFromCShort(vk_short: c_short) !VK {
-    const vk_enum: VK = std.meta.intToEnum(VK, vk_short) catch {
-        return error.VK_ENUM_UNOBTAINABLE_FROM_PARSED_C_SHORT;
-    };
-    return vk_enum;
-}
-
-/// ### Description
-/// Retrieves the virtual key code corresponding to the given ASCII character.
-///
-/// ### Parameters
-/// - `ex_char`: An ASCII character (`u8`).
-fn _getVkFromChar(ex_char: u8) c_short {
-    return VkKeyScanA(ex_char);
 }
 
 /// ### Description

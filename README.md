@@ -94,7 +94,6 @@ zeysInfWait() void
 /// - `virt_keys`: The virtual keys to wait for before passing over this function
 waitUntilKeysPressed(virt_keys: []const VK) !void
 
-/// ### Description 
 /// Returns the virtual keys (VK) that are currently pressed (globally).
 ///
 /// - `vk_buf`: A mutable buffer slice of type `VK` to store the keys detected as pressed. The buffer must be at least 255 elements long.
@@ -152,6 +151,21 @@ blockAllUserInput() !void
 
 /// Unblocks all user input (keyboard and mouse) system-wide. Requires admin privileges.
 unblockAllUserInput() !void
+
+/// Converts a virtual key enum (`VK`) to its corresponding `u8` representation.
+///
+/// - `virt_key_enum`: The virtual key enum value to convert.
+getCharFromVkEnum(virt_key_enum: VK) !u8
+
+/// Converts a `c_short` integer value to its corresponding virtual key enum (`VK`).
+///
+/// - `vk_short`: The `c_short` integer representing a virtual key code.
+getVkEnumFromCShort(vk_short: c_short) !VK
+
+/// Retrieves the virtual key code corresponding to the given ASCII character.
+///
+/// - `ex_char`: An ASCII character (`u8`).
+getVkFromChar(ex_char: u8) c_short
 ```
 
 ## Important Background Information - Virtual Keys (VK)
