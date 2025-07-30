@@ -121,7 +121,15 @@ var hook_i_opt: ?usize = null;
 // ========================
 // === PUBLIC FUNCTIONS ===
 
-/// binding a hotkey to a windows WM_HOTKEY message --> hotkey does not bind if another hotkey w/ these keys already exists 
+/// ### Description 
+/// This function registers a system-wide hotkey combination consisting of modifier keys (if applicable) and one non-modifier key.
+/// If the hotkey is already registered elsewhere, binding will fail.
+///
+/// ### Parameters
+/// - `keys`: A slice of virtual keys (`VK`) representing the combination to bind. The slice may include modifier keys (Alt, Ctrl, Shift, Win) and exactly one non-modifier key. Maximum length of 5 keys allowed.
+/// - `p_func`: Pointer to a callback function that will be invoked when the hotkey is pressed.
+/// - `p_args_struct`: Pointer to any user-defined arguments to be passed to the callback.
+/// - `repeat`: If false, disables auto-repeat behavior for the hotkey (MOD_NOREPEAT).
 pub fn bindHotkey(keys: []const VK, p_func: *const fn (*anyopaque) void, p_args_struct: *anyopaque, repeat: bool) !void {
     // init necessary vars
     var fsModifiers: windows.UINT = 0x0; // init w/o any modifiers
@@ -218,7 +226,11 @@ pub fn zeysInfWait() void {
     }
 }
 
-/// mimics zeysInfWait() but passes when a certain key is pressed --> also calls callback funcs that are resultant of WM_HOTKEY messages being sent
+/// ### Description 
+/// Unbinds a previously registered system-wide hotkey so that WM_HOTKEY messages are no longer sent.
+///
+/// ### Parameters
+/// - `keys`: A slice of virtual keys (`VK`) representing the combination to unbind. The slice must match exactly the hotkey registered earlier. Maximum length of 5 keys allowed.
 pub fn waitUntilKeysPressed(virt_keys: []const VK) !void {
     var msg: MSG = undefined;
     var leave_flag: bool = false;
@@ -250,12 +262,43 @@ pub fn waitUntilKeysPressed(virt_keys: []const VK) !void {
     try unbindHotkey(virt_keys);
 }
 
-/// checking if a key is currently pressed down
+/// ### Description 
+/// Returns the virtual keys (VK) that are currently pressed globally.
+///
+/// ### Parameters
+/// - `vk_buf`: A mutable buffer slice of type `VK` to store the keys detected as pressed. The buffer must be at least 255 elements long.
+pub fn whichKeysPressed(vk_buf: []VK) ![]VK {
+    if (vk_buf.len < 255) return error.VK_BUF_TOO_SMALL;
+    var vk_buf_used_len: usize = 0;
+    
+    // iterate over each potential VK --> skipping mouse VKs
+    for (VK.VK_BACK..VK.VK_OEM_CLEAR) |vk_int| {
+        const curr_key_vk: c_short = GetAsyncKeyState(@intFromEnum(vk_int));
+        
+        // key is currently pressed
+        if (curr_key_vk & KEYEVENTF_EXTENDEDKEY != 0x8000) { 
+            vk_buf[vk_buf_used_len] = curr_key_vk; // needs to be converted to VK from c_short
+            vk_buf_used_len += 1; // increment to next value
+        }
+    }
+
+    return vk_buf[0..vk_buf_used_len];
+}
+
+/// ### Description
+/// Checks if a specific virtual key (VK) is currently pressed down.
+///
+/// ### Parameters
+/// - `virt_key`: The virtual key code (`VK`) to check.
 pub fn isPressed(virt_key: VK) bool {
     return ( (@as(c_int, _getCurrKeyStateAsync(virt_key)) & 0x8000) != 0); // key pressed (down) --> conv to c_int because of bug not allowing c_short to be bitwise AND'd w/ 0x8000 (https://github.com/ziglang/zig/issues/22716)
 }
 
-/// checking if a toggle key is currently active
+/// ### Description
+/// Checks if a toggle key (such as Caps Lock, Num Lock, or Scroll Lock) is currently active.
+///
+/// ### Parameters
+/// - `virt_key`: The virtual key code (`VK`) representing the toggle key to check.
 pub fn isToggled(virt_key: VK) !bool {
     if (virt_key == VK.UNDEFINED) return false;
 
@@ -275,7 +318,12 @@ pub fn pressAndReleaseKey(virt_key: VK) !void {
     try _pressAndReleaseKeyU8(virt_key_u8);
 }
 
-/// pressing the keys associated w/ provided bytes --> doesn't check for UTF-8 encoding (will print characters >0xff as a u8 bytes)
+/// ### Description
+/// Simulates a person pressing and releasing a key once.  
+/// Includes a 1 millisecond delay between the WM_KEYDOWN and WM_KEYUP events to avoid undefined behavior.
+///
+/// ### Parameters
+/// - `virt_key`: The virtual key code (`VK`) representing the key to simulate.
 pub fn pressKeyString(str: []const u8) !void {
     // iterating over each byte to keyboard print the char
     for (str) |char| {
@@ -303,7 +351,11 @@ pub fn pressKeyString(str: []const u8) !void {
     }
 }
 
-/// returns true if a key is a modifier key
+/// ### Description
+/// Returns `true` if the given virtual key (`VK`) is a modifier key (Control, Shift, Alt/Menu, or Windows key).
+///
+/// ### Parameters
+/// - `virt_key`: The virtual key code to check.
 pub fn keyIsModifier(virt_key: VK) bool {
     const modifier_res: bool = switch (virt_key) {
         VK.VK_LCONTROL, VK.VK_LSHIFT, VK.VK_LWIN, VK.VK_LMENU,
@@ -314,7 +366,24 @@ pub fn keyIsModifier(virt_key: VK) bool {
     return modifier_res;
 }
 
-/// returns the Windows current keyboard's locale identifier (hex string)
+/// ### Description
+/// Retrieves the current Windows keyboard layout locale identifier as a hex string and writes it into the provided buffer.
+///
+/// ### Parameters
+/// - `buf`: A mutable byte slice buffer where the locale ID will be stored. The buffer must be at least 9 bytes long to accommodate the ID and null terminator.
+pub fn getKeyboardLocaleId(buf: []u8) ![]u8 {
+    if (buf.len < 9) return error.BUFFER_TOO_SMALL;
+    const lpstr_buf_win32: windows.LPSTR = @ptrCast(buf.ptr); // .ptr used instead of &buf to ensure that a ptr to fixed arr is gotten (not ptr to slice start)
+    const res_keyboard_id_grab: windows.BOOL = GetKeyboardLayoutNameA(lpstr_buf_win32); // getting the keyboard layout ID (digits)
+    if (res_keyboard_id_grab == 0) return error.cannot_capture_global_keyboard; // checking that GetKeyboardLayoutNameA() was successful
+    return buf;
+}
+
+/// ### Description
+/// Retrieves the current Windows keyboard layout locale identifier as a hexadecimal string.
+///
+/// ### Parameters
+/// - `alloc`: A memory allocator used to allocate the buffer that will hold the locale identifier string.
 pub fn getKeyboardLocaleIdAlloc(alloc: std.mem.Allocator) ![]u8 {
     // casting the buffer to a different type
     const buf: []u8 = try alloc.alloc(u8, 9); // creating an arr of size==10 (must be minimum size of 9 + 1 for \0)
@@ -324,7 +393,11 @@ pub fn getKeyboardLocaleIdAlloc(alloc: std.mem.Allocator) ![]u8 {
     return buf;
 }
 
-/// Converts a Windows locale ID (hex string) to a human-readable keyboard locale string.  
+/// ### Description
+/// Converts a Windows keyboard locale identifier (hex string) to a human-readable keyboard locale string.
+///
+/// ### Parameters
+/// - `u8_id`: A null-terminated slice of `u8` representing the Windows locale ID as a hexadecimal string.
 pub fn getKeyboardLocaleStringFromWinLocale(u8_id: []const u8) ![]const u8{
     // finding the null terminator
     var null_term_i: usize = 255;
@@ -340,13 +413,17 @@ pub fn getKeyboardLocaleStringFromWinLocale(u8_id: []const u8) ![]const u8{
     return _getKeyboardLayoutStringFromIdU64(u64_id);
 }
 
-/// REQUIRES ADMIN PRIVILEGES - blocking all user input (system-wide) --> mouse and keyboard (used for CRITICAL functions)
+/// ### Description
+/// Blocks all user input system-wide, including both mouse and keyboard input.
+/// This is a blocking call that requires administrative privileges and is intended for critical functions.
 pub fn blockAllUserInput() !void {
     const block_res: windows.BOOL = BlockInput(true);
     if (block_res == 0) return error.Failed_Keyboard_Input_Block;
 }
 
-/// REQUIRES ADMIN PRIVILEGES - unblocking all user input (system-wide) --> mouse and keyboard (used for CRITICAL functions)
+/// ### Description
+/// Unblocks all user input system-wide, re-enabling both mouse and keyboard input.
+/// This function requires administrative privileges and should be used to reverse a prior input block.
 pub fn unblockAllUserInput() !void {
     const unblock_res: windows.BOOL = BlockInput(false);
     if (unblock_res == 0) return error.Failed_Keyboard_Input_Unblock;
@@ -358,21 +435,34 @@ pub fn unblockAllUserInput() !void {
 // =========================
 // === PRIVATE FUNCTIONS ===
 
-/// gets the state bitmap of a specified virtual key --> used to check if key as pressed down
+/// ### Description
+/// Retrieves the asynchronous state of the specified virtual key.
+///
+/// ### Parameters
+/// - `virt_key`: The virtual key (`VK`) to check the state for.
 fn _getCurrKeyStateAsync(virt_key: VK) c_short {
     const virt_key_c_short: c_short = @intFromEnum(virt_key); // converting enum val so that it is usable
     const key_state_short: c_short = GetAsyncKeyState(@as(c_int, virt_key_c_short)); // conv to c_int as per win32 API
     return key_state_short;
 }
 
-/// gets the state bitmap of a specified virtual key --> used to check if key as pressed down
+/// ### Description
+/// Retrieves the synchronous state of the specified virtual key.
+///
+/// ### Parameters
+/// - `virt_key`: The virtual key (`VK`) to check the state for.
 fn _getCurrKeyState(virt_key: VK) c_short {
     const virt_key_c_short: c_short = @intFromEnum(virt_key); // converting enum val so that it is usable
     const key_state_short: c_short = GetKeyState(@as(c_int, virt_key_c_short)); // conv to c_int as per win32 API
     return key_state_short;
 }
 
-/// press and release key U8
+/// ### Description
+/// Simulates pressing and releasing a key specified by its virtual key code (u8).
+/// Sends a key down event followed by a key up event with a 1 ms delay in between to avoid unexpected behavior.
+///
+/// ### Parameters
+/// - `virt_key_u8`: The virtual key code as an unsigned 8-bit integer.
 fn _pressAndReleaseKeyU8(virt_key_u8: u8) !void {
     // generating the INPUT signals (structs) for the SendInput win32 func call
     const key_down_input: INPUT = _pressKeyDownGetInputStruct(virt_key_u8);
@@ -388,7 +478,11 @@ fn _pressAndReleaseKeyU8(virt_key_u8: u8) !void {
     std.time.sleep(std.time.ns_per_ms); // sleeping for an ms to avoid weird memory overwrites --> keyboard pressing wrong chars
 }
 
-/// func for returning the INPUT struct for WM_KEYDOWN
+/// ### Description
+/// Constructs an `INPUT` struct representing a key down event for the specified virtual key.
+///
+/// ### Parameters
+/// - `virt_key_u8`: The virtual key code as an unsigned 8-bit integer.
 fn _pressKeyDownGetInputStruct(virt_key_u8: u8) INPUT {
     const virt_key_u16: u16 = virt_key_u8; // packing for KEYBDINPUT
     const key_down_input: INPUT = .{ // push key down
@@ -404,7 +498,11 @@ fn _pressKeyDownGetInputStruct(virt_key_u8: u8) INPUT {
     return key_down_input;
 }
 
-/// func for returning the INPUT struct for WM_KEYUP 
+/// ### Description
+/// Constructs an `INPUT` struct representing a key up event for the specified virtual key.
+///
+/// ### Parameters
+/// - `virt_key_u8`: The virtual key code as an unsigned 8-bit integer.
 fn _releaseKeyUpGetInputStruct(virt_key_u8: u8) INPUT {
     const virt_key_u16: u16 = virt_key_u8; // packing for KEYBDINPUT
     const key_up_input: INPUT = .{ // push key down
@@ -420,19 +518,43 @@ fn _releaseKeyUpGetInputStruct(virt_key_u8: u8) INPUT {
     return key_up_input;
 }
 
-/// collecting the u8 from the specified VK value
+/// ### Description
+/// Converts a virtual key enum (`VK`) to its corresponding `u8` representation.
+///
+/// ### Parameters
+/// - `virt_key_enum`: The virtual key enum value to convert.
 fn _getU8VkFromEnum(virt_key_enum: VK) !u8 {
     const virt_key_c_short: c_short = @intFromEnum(virt_key_enum); // typecast to allow easy parsing of VK
     if (virt_key_c_short > 0xff) return error.virt_key_larger_than_u8;
     return @intCast(virt_key_c_short); // converts to u8 on return
 }
 
-/// collecting the virtual key from a char (ASCII)
+/// ### Description
+/// Converts a `c_short` integer value to its corresponding virtual key enum (`VK`).
+///
+/// ### Parameters
+/// - `vk_short`: The `c_short` integer representing a virtual key code.
+fn _getVkEnumFromCShort(vk_short: c_short) !VK {
+    const vk_enum: VK = std.meta.intToEnum(VK, vk_short) catch {
+        return error.VK_ENUM_UNOBTAINABLE_FROM_PARSED_C_SHORT;
+    };
+    return vk_enum;
+}
+
+/// ### Description
+/// Retrieves the virtual key code corresponding to the given ASCII character.
+///
+/// ### Parameters
+/// - `ex_char`: An ASCII character (`u8`).
 fn _getVkFromChar(ex_char: u8) c_short {
     return VkKeyScanA(ex_char);
 }
 
-/// checking for valid INPUT types
+/// ### Description
+/// Checks if the given `INPUT` pointer refers to a keyboard input event.
+///
+/// ### Parameters
+/// - `p_input`: Pointer to an `INPUT` structure.
 fn _isValidKeyboardInputType(p_input: *const INPUT) bool {
     if (p_input.*.input_type != INPUT_KEYBOARD) {
         return false;
@@ -440,7 +562,14 @@ fn _isValidKeyboardInputType(p_input: *const INPUT) bool {
     return true;
 }
 
-/// func for returning []INPUT (slice) that contains all inputs that need to be performed for character to be pressed --> includes special chars i.e. '$'
+/// ### Description
+/// Converts a single ASCII character into a slice of 4 `INPUT` structs representing
+/// the key press and release events needed to simulate typing that character,
+/// including any required modifiers (e.g., Shift).
+///
+/// ### Parameters
+/// - `input_slice`: A mutable slice of `INPUT` structs of length 4 to be populated.
+/// - `ascii_char`: The ASCII character to convert.
 fn _charToInputSliceAlloc(input_slice: []INPUT, ascii_char: u8) ![]INPUT {
     // checking that parsed slice is large enough
     if (input_slice.len != 4) {
@@ -474,15 +603,24 @@ fn _charToInputSliceAlloc(input_slice: []INPUT, ascii_char: u8) ![]INPUT {
     return input_slice;
 }
 
-/// flipping the bool bit
+/// ### Description
+/// Sets the boolean value pointed to by `p_val` to `true`.
+///
+/// ### Parameters
+/// - `p_val`: A pointer to an opaque value expected to be a pointer to a boolean.
 fn _trueBoolCallback(p_val: *anyopaque) void {
     const p_val_bool: *bool = @ptrCast(p_val);
     p_val_bool.* = true;
 }
 
-/// func to get keyboard layout name from keyboard ID
+/// ### Description
+/// Returns a human-readable keyboard layout string based on a Windows locale ID provided as a `u64`.
+/// Uses a constant-time switch statement to map known locale IDs to their respective keyboard names.
+/// Returns an error if the ID is not recognized.
+///
+/// ### Parameters
+/// - `id`: A 64-bit unsigned integer representing the Windows keyboard locale ID (hexadecimal).
 fn _getKeyboardLayoutStringFromIdU64(id: u64) ![]const u8{
-
     // O(1) switch statement
     const KB_ID: []const u8 = switch (id) {
         0x00140C00 => "ADLaM",
