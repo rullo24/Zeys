@@ -100,7 +100,7 @@ waitUntilKeysPressed(virt_keys: []const VK) !void
 /// - `vk_buf`: A mutable buffer slice of type `VK` to store the keys detected as pressed. The buffer must be at least 255 elements long.
 ///
 /// Returns a slice of Zeys virtual keys.
-pub fn getCurrPressedKeys(vk_buf: []VK) ![]VK
+getCurrPressedKeys(vk_buf: []VK) ![]VK
 
 /// Checks if the specified key is currently pressed.
 /// 
