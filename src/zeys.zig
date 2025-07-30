@@ -268,17 +268,17 @@ pub fn waitUntilKeysPressed(virt_keys: []const VK) !void {
 }
 
 /// ### Description 
-/// Returns the virtual keys (VK) that are currently pressed globally.
+/// Returns the virtual keys (VK) that are currently pressed (globally).
 ///
 /// ### Parameters
 /// - `vk_buf`: A mutable buffer slice of type `VK` to store the keys detected as pressed. The buffer must be at least 255 elements long.
-pub fn whichKeysPressed(vk_buf: []VK) ![]VK {
+pub fn getCurrPressedKeys(vk_buf: []VK) ![]VK {
     if (vk_buf.len < 255) return error.VK_BUF_TOO_SMALL;
     var vk_buf_used_len: usize = 0;
-    
+
     // iterate over each potential VK --> skipping mouse VKs
     for (VK.VK_BACK..VK.VK_OEM_CLEAR) |vk_int| {
-        const curr_key_vk: c_short = GetAsyncKeyState(@intFromEnum(vk_int));
+        const curr_key_vk: c_short = GetAsyncKeyState(vk_int);
         
         // key is currently pressed
         if (curr_key_vk & KEYEVENTF_EXTENDEDKEY != 0x8000) { 

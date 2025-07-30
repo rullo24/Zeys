@@ -94,6 +94,14 @@ zeysInfWait() void
 /// - `virt_keys`: The virtual keys to wait for before passing over this function
 waitUntilKeysPressed(virt_keys: []const VK) !void
 
+/// ### Description 
+/// Returns the virtual keys (VK) that are currently pressed (globally).
+///
+/// - `vk_buf`: A mutable buffer slice of type `VK` to store the keys detected as pressed. The buffer must be at least 255 elements long.
+///
+/// Returns a slice of Zeys virtual keys.
+pub fn getCurrPressedKeys(vk_buf: []VK) ![]VK
+
 /// Checks if the specified key is currently pressed.
 /// 
 /// - `virt_key`: The virtual key to check.
