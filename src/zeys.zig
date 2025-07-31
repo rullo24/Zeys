@@ -2,6 +2,7 @@
 // === STD ZIG IMPORTS ===
 
 const std = @import("std");
+const builtin = @import("builtin");
 const c = std.c;
 const windows = std.os.windows;
 
@@ -276,13 +277,17 @@ pub fn getCurrPressedKeys(vk_buf: []VK) ![]VK {
     if (vk_buf.len < 255) return error.VK_BUF_TOO_SMALL;
     var vk_buf_used_len: usize = 0;
 
-    // iterate over each potential VK --> skipping mouse VKs
-    for (VK.VK_BACK..VK.VK_OEM_CLEAR) |vk_int| {
-        const curr_key_vk: c_short = GetAsyncKeyState(vk_int);
-        
+    // // grabbing all fields from VK enum
+    // const vk_type = @typeInfo(VK);
+    // const vk_fields: []const std.builtin.Type.EnumField = vk_type.@"enum".fields;
+
+    // COMPTIME >>> iterate over each potential VK
+    inline for (std.meta.fields(VK)) |field| {
+        const vk_field_val: VK = @enumFromInt(field.value);
+
         // key is currently pressed
-        if (curr_key_vk & KEYEVENTF_EXTENDEDKEY != 0x8000) { 
-            vk_buf[vk_buf_used_len] = curr_key_vk; // needs to be converted to VK from c_short
+        if (isPressed(vk_field_val)) {
+            vk_buf[vk_buf_used_len] = vk_field_val; // needs to be converted to VK from c_short
             vk_buf_used_len += 1; // increment to next value
         }
     }
@@ -296,7 +301,7 @@ pub fn getCurrPressedKeys(vk_buf: []VK) ![]VK {
 /// ### Parameters
 /// - `virt_key`: The virtual key code (`VK`) to check.
 pub fn isPressed(virt_key: VK) bool {
-    return ( (@as(c_int, _getCurrKeyStateAsync(virt_key)) & 0x8000) != 0); // key pressed (down) --> conv to c_int because of bug not allowing c_short to be bitwise AND'd w/ 0x8000 (https://github.com/ziglang/zig/issues/22716)
+    return ((@as(c_int, _getCurrKeyStateAsync(virt_key)) & 0x8000) != 0); // key pressed (down) --> conv to c_int because of bug not allowing c_short to be bitwise AND'd w/ 0x8000 (https://github.com/ziglang/zig/issues/22716)
 }
 
 /// ### Description
@@ -323,7 +328,7 @@ pub fn isToggled(virt_key: VK) !bool {
 /// ### Parameters
 /// - `virt_key`: The virtual key code (`VK`) representing the key to simulate.
 pub fn pressAndReleaseKey(virt_key: VK) !void {
-    const virt_key_u8: u8 = try _getCharFromVkEnum(virt_key);
+    const virt_key_u8: u8 = try getCharFromVkEnum(virt_key);
     try _pressAndReleaseKeyU8(virt_key_u8);
 }
 
@@ -443,10 +448,10 @@ pub fn unblockAllUserInput() !void {
 ///
 /// ### Parameters
 /// - `virt_key_enum`: The virtual key enum value to convert.
-pub fn getCharFromVkEnum(virt_key_enum: VK) !u8 {
-    const virt_key_c_short: c_short = @intFromEnum(virt_key_enum); // typecast to allow easy parsing of VK
-    if (virt_key_c_short > 0xff) return error.virt_key_larger_than_u8;
-    return @intCast(virt_key_c_short); // converts to u8 on return
+pub fn getCharFromVkEnum(vk_enum: VK) !u8 {
+    const vk_c_short: c_short = @intFromEnum(vk_enum); // typecast to allow easy parsing of VK
+    if (vk_c_short > 0xff) return error.VK_LARGER_THAN_U8;
+    return @intCast(vk_c_short); // converts to u8 on return
 }
 
 /// ### Description
@@ -592,7 +597,7 @@ fn _charToInputSliceAlloc(input_slice: []INPUT, ascii_char: u8) ![]INPUT {
     }
 
     // using win32 API to capture whether a modifier is required alongside VK press
-    const special_vk_c_short: c_short = _getVkFromChar(ascii_char);
+    const special_vk_c_short: c_short = getVkFromChar(ascii_char);
     const special_vk_high_bytes: u8 = @intCast((special_vk_c_short >> 8) & 0xff); // high-bytes denote the additional modifiers
     const special_requires_shift_modifier: bool = ((special_vk_high_bytes & 1) > 0); // 0x01 of high-byte denotes the SHIFT modifier requires pressing
     const special_vk_u8: u8 = @intCast(special_vk_c_short & 0xff); // removing c_short extra bytes
