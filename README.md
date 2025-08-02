@@ -1,16 +1,19 @@
 # Zeys - A Zig Keyboard Module
+
 Zeys provides a set of functions for simulating keyboard events, handling hotkeys, and interacting with the Windows API to manage keyboard inputs. It supports binding, unbinding, and triggering hotkeys, simulating key presses and releases, checking key states, and more. This module is intended for use in Windows-based applications.
 
 ## Current Operating System Support
+
 | Platform | Support |
-|----------|---------|
-| Windows  | ✔       |
+| -------- | ------- |
+| Windows  | ✔      |
 | Linux    | ❌      |
 | Mac      | ❌      |
 
 NOTE: Currently, the module only supports Windows. Linux support will be considered in future updates (if people would like this).
 
 ## Features
+
 - Simulate Key Presses: Simulate pressing and releasing keys using the pressAndReleaseKey() function.
 - Hotkey Management: Bind and unbind hotkeys that trigger functions when pressed.
 - Blocking User Input: Block and unblock user input (keyboard and mouse) system-wide.
@@ -19,18 +22,23 @@ NOTE: Currently, the module only supports Windows. Linux support will be conside
 - Custom Callbacks: Set up custom functions that will be executed when specific keys or hotkeys are pressed.
 
 ## Installation
+
 NOTE: At the time of Zeys v1.1.0's release, this code works on Zig v0.13.0 (the latest release).
 
-Thanks to SuSonicTH, I have had some help in updating this repo (v1.1.0) to allow for it to be downloaded via Zig's built-in package manager (zon). 
+Thanks to SuSonicTH, I have had some help in updating this repo (v1.1.0) to allow for it to be downloaded via Zig's built-in package manager (zon).
 
 To use Zeys in your project, simply follow the process below:
+
 1. Fetch the Zeys repo from within one of the project's folders (must have a build.zig). This will automatically add the dependency to your project's build.zig.zon file (or create one if this currently does not exist).
-    - An example for importing Zeys v1.1.0 is shown below
+   - An example for importing Zeys v1.1.0 is shown below
+
 ```zig
 zig fetch --save "https://github.com/rullo24/Zeys/archive/refs/tags/v1.1.0.tar.gz"
 ```
+
 2. Add the Zeys dependency to your build.zig file
-    - An example is shown below (build.zig)
+   - An example is shown below (build.zig)
+
 ```zig
 const std = @import("std");
 
@@ -54,8 +62,10 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 }
 ```
+
 3. Import the Zeys module at the top of your code using the "@import" method
-    - An example is shown below (test_zeys.zig)
+   - An example is shown below (test_zeys.zig)
+
 ```zig
 const std = @import("std");
 const zeys = @import("zeys");
@@ -72,6 +82,7 @@ pub fn main() void {
 ```
 
 ## API
+
 ```zig
 /// Binds a hotkey to a Windows WM_HOTKEY message.
 /// 
@@ -165,15 +176,17 @@ getVkEnumFromCShort(vk_short: c_short) !VK
 /// Retrieves the virtual key code corresponding to the given ASCII character.
 ///
 /// - `ex_char`: An ASCII character (`u8`).
-getVkFromChar(ex_char: u8) c_short
+getVkFromChar(ex_char: u8) !VK
 ```
 
 ## Important Background Information - Virtual Keys (VK)
+
 Virtual keys are constants used by the Windows API to represent keyboard keys. These constants are part of the enum(c_short) declaration in Zeys and correspond to both standard and special keys i.e. function keys (F1-F12), numeric keypad keys, and modifier keys (e.g., Shift, Ctrl, Alt).
 
 This enum allows for more manageable code when working with keyboard inputs, as you can use meaningful names like VK_A, VK_RETURN (enter), and VK_SHIFT instead of raw numeric values. Virtual keys are essential for simulating key presses and managing hotkeys in the Zeys module.
 
 List of Common Virtual Keys
+
 - Standard Keys: VK_A, VK_B, VK_C, ..., VK_Z
 - Numeric Keys: VK_0, VK_1, VK_2, ..., VK_9
 - Function Keys: VK_F1, VK_F2, VK_F3, ..., VK_F24
@@ -183,7 +196,9 @@ List of Common Virtual Keys
 - More VKs (view zeys.zig)
 
 ### Virtual Keys - Example Usage
+
 Here’s how you can use the virtual keys in Zeys to simulate key presses or bind hotkeys:
+
 ```zig
 // Simulating a key press of the "A" key
 pressAndReleaseKey(zeys.VK.VK_A); // Simulates pressing and releasing the 'A' key
@@ -194,12 +209,14 @@ try zeys.bindHotkey( &[_]zeys.VK{ zeys.VK.VK_Z, zeys.VK.VK_CONTROL, zeys.VK.VK_S
 
 These virtual keys are used throughout the Zeys module for functions like bindHotkey(), pressAndReleaseKey(), isPressed(), and more. They help to ensure that the module can interact with the system in a way that aligns with Windows' key-coding conventions.
 
-
 ## Usage
+
 ### Binding a Hotkey
+
 To bind a hotkey, use the bindHotkey() function. This will associate a specific combination of keys with a function to be called when the hotkey is pressed.
 
 #### Binding a Hotkey - Example
+
 ```zig
 fn tester_func_1(args: *anyopaque) void {
     _ = args;
@@ -220,48 +237,60 @@ pub fn main() {
 ```
 
 ### Unbinding a Hotkey
+
 To unbind a hotkey, use the unbindHotkey() function and provide the same key combination used during binding.
 
 #### Unbinding a Hotkey - Example
+
 ```zig
 unbindHotkey( &[_]zeys.VK{ zeys.VK.VK_B, } );
 ```
 
 ### Simulating a Key Press
+
 To simulate a key press, you can use the pressAndReleaseKey() function.
 
 #### Simulating a Key Press - Example
+
 ```zig
 pressAndReleaseKey(zeys.VK.VK_A); // Simulate pressing and releasing the 'A' key
 ```
 
 ### Blocking User Input
+
 To block all user input (keyboard and mouse), use the blockAllUserInput() function.
 
 #### Blocking User Input - Example
+
 ```zig
 blockAllUserInput();
 ```
 
 ## More Examples
+
 For more example usage of the library, please check the *./example* directory included in this repo. This folder explains in higher detail the intricacies of the project.
 
 ## Windows API Functions Used
+
 This module relies on several Windows API functions to interact with the system's keyboard and input functionality. Some of the key functions used include:
+
 - RegisterHotKey
 - SendInput
 - GetAsyncKeyState
 - BlockInput
-For more information about these functions, refer to the Windows API documentation.
+  For more information about these functions, refer to the Windows API documentation.
 
 ## Error Handling
+
 Zeys uses Zig's built-in error handling for common failure scenarios, such as:
+
 - Too many keys provided for a hotkey binding.
 - Failed to register or unregister a hotkey.
 - Issues with sending key inputs or blocking/unblocking input.
 - And more
 
 ## License
+
 This module is provided as-is. I am not responsible for any misuse or unintended consequences that may result from using this module. Please use it responsibly and ensure you have proper safeguards in place before using any functions that block input or simulate key presses.
 
 This project is licensed under the MIT License - see the LICENSE file for details.

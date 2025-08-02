@@ -451,6 +451,7 @@ pub fn unblockAllUserInput() !void {
 pub fn getCharFromVkEnum(vk_enum: VK) !u8 {
     const vk_c_short: c_short = @intFromEnum(vk_enum); // typecast to allow easy parsing of VK
     if (vk_c_short > 0xff) return error.VK_LARGER_THAN_U8;
+    if (std.ascii.isAlphanumeric(@intCast(vk_c_short)) != true) return error.CANNOT_CONVERT_VK_TO_CHAR;
     return @intCast(vk_c_short); // converts to u8 on return
 }
 
@@ -471,8 +472,10 @@ pub fn getVkEnumFromCShort(vk_short: c_short) !VK {
 ///
 /// ### Parameters
 /// - `ex_char`: An ASCII character (`u8`).
-pub fn getVkFromChar(ex_char: u8) c_short {
-    return VkKeyScanA(ex_char);
+pub fn getVkFromChar(ex_char: u8) !VK {
+    const vk_val: c_short = VkKeyScanA(ex_char);
+    if (vk_val < 0) return error.FAILED_VK_FROM_CHAR_CONVERSION;
+    return @enumFromInt(vk_val);
 }
 
 
@@ -597,7 +600,8 @@ fn _charToInputSliceAlloc(input_slice: []INPUT, ascii_char: u8) ![]INPUT {
     }
 
     // using win32 API to capture whether a modifier is required alongside VK press
-    const special_vk_c_short: c_short = getVkFromChar(ascii_char);
+    const special_vk: VK = try getVkFromChar(ascii_char);
+    const special_vk_c_short: c_short = @intFromEnum(special_vk);
     const special_vk_high_bytes: u8 = @intCast((special_vk_c_short >> 8) & 0xff); // high-bytes denote the additional modifiers
     const special_requires_shift_modifier: bool = ((special_vk_high_bytes & 1) > 0); // 0x01 of high-byte denotes the SHIFT modifier requires pressing
     const special_vk_u8: u8 = @intCast(special_vk_c_short & 0xff); // removing c_short extra bytes

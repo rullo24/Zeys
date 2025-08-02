@@ -13,8 +13,10 @@ pub fn main() !void {
         
         // printing each key that is currently pressed
         for (keys_pressed) |key| {
+            std.debug.print("{d}\n", .{@intFromEnum(key)});
             if (std.mem.eql(zeys.VK, keys_pressed, vk_compare_slice) != true) {
-                std.debug.print("{c}", .{try zeys.getCharFromVkEnum(key)});
+                const curr_char: u8 = zeys.getCharFromVkEnum(key) catch { continue; };
+                std.debug.print("{c}", .{curr_char});
             }
         }
         vk_compare_slice.len = keys_pressed.len;
