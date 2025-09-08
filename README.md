@@ -2,6 +2,11 @@
 
 Zeys provides a set of functions for simulating keyboard events, handling hotkeys, and interacting with the Windows API to manage keyboard inputs. It supports binding, unbinding, and triggering hotkeys, simulating key presses and releases, checking key states, and more. This module is intended for use in Windows-based applications.
 
+## Known Bugs/Issues
+- pressKeyString only works for alphanumeric chars --> outputs jibberish for others
+    - refer to type_string.zig output
+- 
+
 ## Current Operating System Support
 
 | Platform | Support |

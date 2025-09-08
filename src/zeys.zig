@@ -3,7 +3,6 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const c = std.c;
 const windows = std.os.windows;
 
 // === STD ZIG IMPORTS ===
@@ -328,7 +327,8 @@ pub fn isToggled(virt_key: VK) !bool {
 /// ### Parameters
 /// - `virt_key`: The virtual key code (`VK`) representing the key to simulate.
 pub fn pressAndReleaseKey(virt_key: VK) !void {
-    const virt_key_u8: u8 = try getCharFromVkEnum(virt_key);
+    // const virt_key_u8: u8 = try getCharFromVkEnum(&.{virt_key}, keyboard_layout_str);
+    const virt_key_u8: u8 = _getU8RepresentFromVk(virt_key);
     try _pressAndReleaseKeyU8(virt_key_u8);
 }
 
@@ -339,6 +339,9 @@ pub fn pressAndReleaseKey(virt_key: VK) !void {
 /// ### Parameters
 /// - `virt_key`: The virtual key code (`VK`) representing the key to simulate.
 pub fn pressKeyString(str: []const u8) !void {
+
+    // TODO: check if non-alphanumeric chars currently throw an error
+
     // iterating over each byte to keyboard print the char
     for (str) |char| {
         var input_arr_size_4: [4]INPUT = undefined;
@@ -347,10 +350,10 @@ pub fn pressKeyString(str: []const u8) !void {
         // checking for the num of valid keyboard INPUTs
         var valid_input_count: c_uint = 0;
         for (curr_char_input_slice) |curr| { // iterating over each
-            if (_isValidKeyboardInputType(&curr) != true) {
-                break; // moving 
-            }
+
+            if (_isValidKeyboardInputType(&curr) != true) break; // moving 
             valid_input_count += 1;
+
         }
         if (valid_input_count != 2 and valid_input_count != 4) return error.Failed_To_Press_Key;
 
@@ -359,7 +362,7 @@ pub fn pressKeyString(str: []const u8) !void {
         while (valid_input_count > i) {
             const press_key_res: c_uint = SendInput(1, &curr_char_input_slice[i], @sizeOf(INPUT)); // pressing 1x INPUT
             if (press_key_res == 0) return error.Failed_To_Send_Press_Key; // err checking
-            std.time.sleep(std.time.ns_per_ms * 1); // waiting to avoid false keypresses
+            std.Thread.sleep(std.time.ns_per_ms * 1); // waiting to avoid false keypresses
             i += 1; // incrementing counter to move to next INPUT{}
         }
     }
@@ -381,20 +384,7 @@ pub fn keyIsModifier(virt_key: VK) bool {
 }
 
 /// ### Description
-/// Retrieves the current Windows keyboard layout locale identifier as a hex string and writes it into the provided buffer.
-///
-/// ### Parameters
-/// - `buf`: A mutable byte slice buffer where the locale ID will be stored. The buffer must be at least 9 bytes long to accommodate the ID and null terminator.
-pub fn getKeyboardLocaleId(buf: []u8) ![]u8 {
-    if (buf.len < 9) return error.BUFFER_TOO_SMALL;
-    const lpstr_buf_win32: windows.LPSTR = @ptrCast(buf.ptr); // .ptr used instead of &buf to ensure that a ptr to fixed arr is gotten (not ptr to slice start)
-    const res_keyboard_id_grab: windows.BOOL = GetKeyboardLayoutNameA(lpstr_buf_win32); // getting the keyboard layout ID (digits)
-    if (res_keyboard_id_grab == 0) return error.cannot_capture_global_keyboard; // checking that GetKeyboardLayoutNameA() was successful
-    return buf;
-}
-
-/// ### Description
-/// Retrieves the current Windows keyboard layout locale identifier as a hexadecimal string.
+/// Retrieves the current Windows keyboard layout locale identifier as a hexadecimal string. The heap-allocated slice is to be free'd externally by the user using alloc.free
 ///
 /// ### Parameters
 /// - `alloc`: A memory allocator used to allocate the buffer that will hold the locale identifier string.
@@ -405,6 +395,41 @@ pub fn getKeyboardLocaleIdAlloc(alloc: std.mem.Allocator) ![]u8 {
     const res_keyboard_id_grab: windows.BOOL = GetKeyboardLayoutNameA(lpstr_buf_win32); // getting the keyboard layout ID (digits)
     if (res_keyboard_id_grab == 0) return error.cannot_capture_global_keyboard; // checking that GetKeyboardLayoutNameA() was successful
     return buf;
+}
+
+/// ### Description
+/// Retrives the current user's keyboard string.
+/// ### Parameters
+/// N/A
+pub fn getCurrKeyboardLocaleString(p_locale_buf: *[9]u8) ![]const u8 {
+    try getKeyboardLocaleId(p_locale_buf);
+    return try getKeyboardLocaleStringFromWinLocale(p_locale_buf.*[0..p_locale_buf.len]);
+}
+
+/// ### Description
+/// Retrieves the current Windows keyboard layout locale identifier as a hexadecimal string.
+///
+/// ### Parameters
+/// - `p_locale_buf`: To store the Locale ID on completion
+pub fn getKeyboardLocaleId(p_locale_buf: *[9]u8) !void {
+    // grabbing layout name
+    const lpstr_buf_win32: windows.LPSTR = @ptrCast(p_locale_buf); // .ptr used instead of &buf to ensure that a ptr to fixed arr is gotten (not ptr to slice start)
+    const res_keyboard_id_grab: windows.BOOL = GetKeyboardLayoutNameA(lpstr_buf_win32); // getting the keyboard layout ID (digits)
+
+    // checking that GetKeyboardLayoutNameA() was successful
+    if (res_keyboard_id_grab == 0) return error.cannot_capture_global_keyboard; 
+}
+
+test "getKeyboardLocaleId: Buffer ptr cast correct" {
+    var locale_buf: [9]u8 = std.mem.zeroes([9]u8);
+    
+    // pushing the keyboard locale ID into the buffer
+    try getKeyboardLocaleId(&locale_buf);
+
+    // each char in the string should still be a zero --> otherwise fail
+    for (locale_buf) |c| {
+        try std.testing.expect(c != 0x0);
+    }
 }
 
 /// ### Description
@@ -447,12 +472,28 @@ pub fn unblockAllUserInput() !void {
 /// Converts a virtual key enum (`VK`) to its corresponding `u8` representation.
 ///
 /// ### Parameters
-/// - `virt_key_enum`: The virtual key enum value to convert.
-pub fn getCharFromVkEnum(vk_enum: VK) !u8 {
-    const vk_c_short: c_short = @intFromEnum(vk_enum); // typecast to allow easy parsing of VK
-    if (vk_c_short > 0xff) return error.VK_LARGER_THAN_U8;
-    if (std.ascii.isAlphanumeric(@intCast(vk_c_short)) != true) return error.CANNOT_CONVERT_VK_TO_CHAR;
-    return @intCast(vk_c_short); // converts to u8 on return
+/// - `vk_slice` - The virtuals keys to convert (must only contain one regular keypress - can be multiple modifier keys)
+/// - `keyboard_layout_str`: The keyboard layout string for identifying what VKs match w/ characters.
+pub fn getCharFromVkEnum(vk_slice: []const VK, keyboard_layout_str: []const u8) !u8 {
+    // checking for more than one active VK
+
+    // switching based on input keyboard layout
+    if (std.mem.eql(u8, "US", keyboard_layout_str)) {
+        // TODO: implement multi-VK slices interpretation
+        if (vk_slice.len != 1) return error.MULTI_VK_SLICE_NOT_YET_SUPPORTED; 
+
+        // VK matches w/ ASCII values for alphanumeric chars
+        const initial_vk: VK = vk_slice[0];
+        const initial_vk_c_short: c_short = @intFromEnum(initial_vk); // typecast to allow easy parsing of VK
+        if (initial_vk_c_short > 0xff) return error.VK_OUT_OF_BOUNDS; // checking VK not out of U8 range
+
+        const initial_vk_as_u8: u8 = @intCast(initial_vk_c_short & 0xff);
+        if (std.ascii.isAlphanumeric(initial_vk_as_u8) == false) return error.NON_ALPHANUMERIC_CONVERSION_ATTEMPTED;
+
+
+        return @intCast(initial_vk_c_short); // converts to u8 on return
+
+    } else return error.Keyboard_Type_Not_Supported; // TODO: implement more keyboard types
 }
 
 /// ### Description
@@ -475,7 +516,8 @@ pub fn getVkEnumFromCShort(vk_short: c_short) !VK {
 pub fn getVkFromChar(ex_char: u8) !VK {
     const vk_val: c_short = VkKeyScanA(ex_char);
     if (vk_val < 0) return error.FAILED_VK_FROM_CHAR_CONVERSION;
-    return @enumFromInt(vk_val);
+    if (std.ascii.isAlphanumeric(@intCast(vk_val & 0xff)) == false) return error.NON_ALPHANUMERIC_NOT_AVAILABLE;
+    return @enumFromInt(vk_val & 0xff); // remove the shift-state (high-byte)
 }
 
 
@@ -484,6 +526,15 @@ pub fn getVkFromChar(ex_char: u8) !VK {
 
 // =========================
 // === PRIVATE FUNCTIONS ===
+
+/// ### Description
+/// Helper function that converts a Zeys VK to its U8 equivalent. Does not convert to a character, just a simple translation of types.
+/// 
+/// ### Parameters
+/// - `virt_key`: The virtual key (`VK`) to convert to the U8 type.
+fn _getU8RepresentFromVk(virt_key: VK) u8 {
+    return @intCast(@intFromEnum(virt_key));
+}
 
 /// ### Description
 /// Retrieves the asynchronous state of the specified virtual key.
@@ -525,7 +576,7 @@ fn _pressAndReleaseKeyU8(virt_key_u8: u8) !void {
     if (res_send_input == 0) {
         return error.failed_to_send_press_key_down_input;
     }
-    std.time.sleep(std.time.ns_per_ms); // sleeping for an ms to avoid weird memory overwrites --> keyboard pressing wrong chars
+    std.Thread.sleep(std.time.ns_per_ms); // sleeping for an ms to avoid weird memory overwrites --> keyboard pressing wrong chars
 }
 
 /// ### Description

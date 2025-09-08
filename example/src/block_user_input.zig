@@ -10,11 +10,11 @@ pub fn main() !void {
     try zeys.blockAllUserInput();
     
     // Keep input blocked for 3 seconds (3 billion nanoseconds)
-    std.time.sleep(std.time.ns_per_s * 3);
+    std.Thread.sleep(std.time.ns_per_s * 3);
 
     // Unblock user input, restoring normal system interaction
     try zeys.unblockAllUserInput();
     
     // Wait for another 3 seconds before the program exits
-    std.time.sleep(std.time.ns_per_s * 3);
+    std.Thread.sleep(std.time.ns_per_s * 3);
 }

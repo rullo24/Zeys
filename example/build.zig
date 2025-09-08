@@ -12,7 +12,10 @@ pub fn build(b: *std.Build) !void {
     b.reference_trace = 10;
 
     // defining the Zeys keyboard library as a module
-    const zeys_module = b.addModule("zeys", .{
+    // const zeys_module = b.addModule("zeys", .{
+    //     .root_source_file = b.path("../src/zeys.zig"),
+    // });
+    const zeys_module = b.createModule(.{
         .root_source_file = b.path("../src/zeys.zig"),
     });
 
@@ -41,9 +44,11 @@ pub fn build(b: *std.Build) !void {
             // creating executables for each example
             const curr_exe = b.addExecutable(.{ 
                 .name = std.fs.path.stem(example_file.basename),
-                .root_source_file = b.path(path),
-                .target = target,
-                .optimize = optimise,
+                .root_module = b.createModule(.{
+                    .root_source_file = b.path(path),
+                    .target = target,
+                    .optimize = optimise,
+                }),
             });
 
             // linking libraries to each executable

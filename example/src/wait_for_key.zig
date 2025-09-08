@@ -28,7 +28,7 @@ pub fn main() !void {
     std.debug.print("D + SHIFT + ALT + CTRL Pressed\n", .{});
 
     std.debug.print("Step 5: You cannot parse more than 5x keys to any key function\n", .{});
-    std.time.sleep(std.time.ns_per_s);
+    std.Thread.sleep(std.time.ns_per_s);
     _ = zeys.waitUntilKeysPressed( &[_]zeys.VK{ zeys.VK.VK_D, zeys.VK.VK_SHIFT, zeys.VK.VK_MENU, zeys.VK.VK_CONTROL, zeys.VK.VK_LCONTROL, zeys.VK.UNDEFINED }) catch {
         std.debug.print("An error was found here (as expected)\n", .{});
     };

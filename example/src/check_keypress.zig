@@ -9,6 +9,6 @@ pub fn main() !void {
         std.debug.print("\rA is Pressed: {any}", .{ zeys.isPressed(zeys.VK.VK_A) });
 
         // Wait 50ms before again checking if the 'A' key is pressed
-        std.time.sleep(std.time.ns_per_ms * 50);
+        std.Thread.sleep(std.time.ns_per_ms * 50);
     }
 }
